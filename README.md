@@ -51,6 +51,12 @@ Open:
 report/report.html
 ```
 
+What to look for:
+
+```text
+docs/WHAT_TO_EXPECT.md
+```
+
 For a directory of JSON logs:
 
 ```bash
