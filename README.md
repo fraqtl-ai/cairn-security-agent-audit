@@ -36,6 +36,13 @@ The report includes:
 
 ## Quickstart
 
+Clone:
+
+```bash
+git clone https://github.com/fraqtl-ai/cairn-security-agent-audit.git
+cd cairn-security-agent-audit
+```
+
 Run the included sample:
 
 ```bash
@@ -57,7 +64,29 @@ What to look for:
 docs/WHAT_TO_EXPECT.md
 ```
 
-For a directory of JSON logs:
+## Try Your Own Logs
+
+If your trace is JSONL:
+
+```bash
+python3 cairn_pilot_from_raw_logs.py \
+  --input your_trace.jsonl \
+  --out report \
+  --price-input-per-m 3.0 \
+  --no-cleaned-trace
+```
+
+If your trace is one JSON file:
+
+```bash
+python3 cairn_pilot_from_raw_logs.py \
+  --input your_trace.json \
+  --out report \
+  --price-input-per-m 3.0 \
+  --no-cleaned-trace
+```
+
+If your traces are a directory of JSON logs:
 
 ```bash
 python3 cairn_pilot_from_raw_logs.py \
@@ -68,15 +97,33 @@ python3 cairn_pilot_from_raw_logs.py \
   --no-cleaned-trace
 ```
 
+Then open:
+
+```text
+report/report.html
+```
+
+The JSON and Markdown outputs are:
+
+```text
+report/summary.json
+report/summary.md
+report/normalization_summary.json
+```
+
 ## Inspect An Unknown Export
 
-Before running a customer trace, inspect the shape:
+If you do not know whether your export has the right fields, inspect the shape
+first:
 
 ```bash
 python3 cairn_inspect_log_schema.py \
-  --input logs/example.jsonl \
+  --input your_trace.jsonl \
   --out report/schema_inspection.json
 ```
+
+You can share `report/schema_inspection.json` or one redacted example row
+without sharing raw logs.
 
 Useful fields are:
 
@@ -92,6 +139,20 @@ input/output token counts if available
 
 If the trace shape is different, map it into the simple JSONL format shown in
 `samples/pentest_trace_sample.jsonl`.
+
+Minimal JSONL example:
+
+```json
+{"session_id":"run-1","step":1,"tool":"shell","command":"nmap -sV 10.0.0.5","output":"PORT 22 open ssh...","output_tokens":900,"before":{"fingerprint":"target-a"},"after":{"fingerprint":"target-a"}}
+```
+
+If output or observation text is missing, CAIRN can still show repeated-work and
+stale-risk structure, but token-savings and delta-serving estimates will be
+weaker.
+
+If target/session fingerprints are missing, CAIRN can still run with
+conservative proxy fingerprints, but real fingerprints make the protected-lane
+analysis stronger.
 
 ## Public Reference Result
 
