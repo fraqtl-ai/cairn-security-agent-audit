@@ -1,0 +1,12 @@
+report/
+reports/
+logs/
+data/
+*.sqlite
+*.db
+*.parquet
+*.pq
+*.pyc
+__pycache__/
+.DS_Store
+

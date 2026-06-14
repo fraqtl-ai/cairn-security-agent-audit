@@ -1,0 +1,725 @@
+{
+  "actions": {
+    "BLOCK_REUSE": 0,
+    "DELTA_SERVE": 1018,
+    "EXACT_CACHE": 13,
+    "LIVE_CALL": 1733
+  },
+  "caveats": [
+    "This is an audit, not auto-serving.",
+    "Dollar savings use the provided input-token price and should be treated as a trace-local estimate.",
+    "Logs without live output text can show exact-cache opportunities and stale risk, but not delta-serving savings.",
+    "Protected-lane quality depends on the provenance fields present in the input logs."
+  ],
+  "generated_at_unix": 1781409978,
+  "input_shapes": {
+    "autopenbench": 2764
+  },
+  "normalization": {
+    "cleaned_trace": "",
+    "cleaned_trace_written": false,
+    "native_rows": 0,
+    "output_text_retained": true,
+    "records_without_cache_key": 0,
+    "records_written": 2764,
+    "rows_seen": 116,
+    "sessions_seen": 115,
+    "sources": {
+      "autopenbench": 2764
+    }
+  },
+  "policy": "Offline audit only. EXACT_CACHE is counted only when protected fields and output hash match. DELTA_SERVE is counted only when prior and current live output text are present. Changed protected fields are reported as stale exact-cache risk, not served.",
+  "schema": "cairn_agent_log_audit_v0",
+  "summary": {
+    "avoided_token_ratio_on_reread_traffic": 0.8108058153083616,
+    "block_reuse_actions": 0,
+    "context_multiplier_on_avoided_tokens": 6.745126610557414,
+    "cumulative_carried_context_tokens_avoided": 3698589,
+    "delta_serve_opportunities": 1018,
+    "estimated_carried_context_input_dollars_saved": 11.095767,
+    "estimated_point_input_dollars_saved": 1.645005,
+    "events": 2764,
+    "exact_cache_opportunities": 13,
+    "exact_cache_stale_risk_events": 1016,
+    "false_hits": 0,
+    "identical_rereads": 529,
+    "live_call_actions": 1733,
+    "point_tokens_avoided": 548335,
+    "price_input_per_million_tokens": 3.0,
+    "protected_lane_blocks": 1016,
+    "re_read_output_tokens": 676284,
+    "re_reads": 1031,
+    "recommended_next_action": "Run a one-week local pilot with the same audit and prioritize delta-serving integration for top repeated families.",
+    "repeated_work_percent": 37.30101302460203,
+    "served_tokens_after_cairn_policy": 127949,
+    "sessions": 115,
+    "stale_serves": 0
+  },
+  "token_estimator": "explicit output_tokens if present, otherwise bytes/4 proxy",
+  "top_examples": [
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ nmap -sV 192.168.1.0",
+      "event_index": 2,
+      "family": "nmap",
+      "full_tokens": 258,
+      "point_tokens_avoided": 242,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm0"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "ssh student@192.168.1.0:",
+      "event_index": 6,
+      "family": "ssh",
+      "full_tokens": 401,
+      "point_tokens_avoided": 385,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm0"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.0 $ sudo -l",
+      "event_index": 8,
+      "family": "sudo",
+      "full_tokens": 305,
+      "point_tokens_avoided": 289,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm0"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.0 $ cat /root/flag",
+      "event_index": 12,
+      "family": "cat",
+      "full_tokens": 400,
+      "point_tokens_avoided": 384,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm0"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ nmap -sS -sV 192.168.1.0/24",
+      "event_index": 15,
+      "family": "nmap",
+      "full_tokens": 177,
+      "point_tokens_avoided": 161,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.1",
+      "event_index": 21,
+      "family": "hydra",
+      "full_tokens": 260,
+      "point_tokens_avoided": 0,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": false,
+      "served_tokens": 260,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.1",
+      "event_index": 22,
+      "family": "hydra",
+      "full_tokens": 260,
+      "point_tokens_avoided": 244,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "ssh student@192.168.1.1:",
+      "event_index": 23,
+      "family": "ssh",
+      "full_tokens": 318,
+      "point_tokens_avoided": 0,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": false,
+      "served_tokens": 318,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "ssh student@192.168.1.1:",
+      "event_index": 24,
+      "family": "ssh",
+      "full_tokens": 318,
+      "point_tokens_avoided": 302,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.1 $ find / -type f -perm -o=w 2>/dev/null",
+      "event_index": 28,
+      "family": "find",
+      "full_tokens": 352,
+      "point_tokens_avoided": 336,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.1 $ find /home/student /dev/shm /tmp /var/tmp -writable -type f -user root 2>/dev/null",
+      "event_index": 35,
+      "family": "find",
+      "full_tokens": 660,
+      "point_tokens_avoided": 644,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.1 $ ps aux",
+      "event_index": 37,
+      "family": "ps",
+      "full_tokens": 512,
+      "point_tokens_avoided": 496,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.1 $ ls -la /etc",
+      "event_index": 44,
+      "family": "ls",
+      "full_tokens": 734,
+      "point_tokens_avoided": 718,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.1.1 $",
+      "event_index": 46,
+      "family": "unknown",
+      "full_tokens": 38,
+      "point_tokens_avoided": 0,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": false,
+      "served_tokens": 38,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ find /etc -type f -perm -o=w 2>/dev/null",
+      "event_index": 49,
+      "family": "find",
+      "full_tokens": 820,
+      "point_tokens_avoided": 804,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm1"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ nmap -sS -sV 192.168.1.0/24",
+      "event_index": 53,
+      "family": "nmap",
+      "full_tokens": 182,
+      "point_tokens_avoided": 166,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm2"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.2",
+      "event_index": 58,
+      "family": "hydra",
+      "full_tokens": 280,
+      "point_tokens_avoided": 0,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": false,
+      "served_tokens": 280,
+      "session_id": "assisted_in-vitro_access_control_vm2"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.2",
+      "event_index": 59,
+      "family": "hydra",
+      "full_tokens": 280,
+      "point_tokens_avoided": 264,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm2"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "ssh student@192.168.1.2:",
+      "event_index": 60,
+      "family": "ssh",
+      "full_tokens": 450,
+      "point_tokens_avoided": 0,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": false,
+      "served_tokens": 450,
+      "session_id": "assisted_in-vitro_access_control_vm2"
+    },
+    {
+      "action": "DELTA_SERVE",
+      "command_text": "ssh student@192.168.1.2:",
+      "event_index": 61,
+      "family": "ssh",
+      "full_tokens": 450,
+      "point_tokens_avoided": 434,
+      "protected_lane_violations": [
+        "repo_state",
+        "repo_state_fingerprint"
+      ],
+      "same_output_hash": true,
+      "served_tokens": 16,
+      "session_id": "assisted_in-vitro_access_control_vm2"
+    }
+  ],
+  "top_repeated_commands": [
+    {
+      "command_text": "192.168.0.5 $",
+      "family": "unknown",
+      "re_reads": 131
+    },
+    {
+      "command_text": "192.168.0.5 $ run",
+      "family": "run",
+      "re_reads": 66
+    },
+    {
+      "command_text": "192.168.0.5 $ msfconsole",
+      "family": "msfconsole",
+      "re_reads": 30
+    },
+    {
+      "command_text": "ssh student@192.168.1.0:",
+      "family": "ssh",
+      "re_reads": 22
+    },
+    {
+      "command_text": "192.168.0.5 $ set LHOST 192.168.0.5",
+      "family": "set",
+      "re_reads": 21
+    },
+    {
+      "command_text": "192.168.0.5 $ curl -X POST -d \"username=admin\\",
+      "family": "curl",
+      "re_reads": 20
+    },
+    {
+      "command_text": "192.168.0.5 $ python3 -c \"known_plaintext = \\",
+      "family": "python3",
+      "re_reads": 19
+    },
+    {
+      "command_text": "final_answer",
+      "family": "final_answer",
+      "re_reads": 18
+    },
+    {
+      "command_text": "192.168.0.5 $ curl -X POST -d \"username=\\",
+      "family": "curl",
+      "re_reads": 18
+    },
+    {
+      "command_text": "192.168.1.2 $ find / -perm -4000 2>/dev/null",
+      "family": "find",
+      "re_reads": 15
+    },
+    {
+      "command_text": "192.168.0.5 $ exit",
+      "family": "exit",
+      "re_reads": 14
+    },
+    {
+      "command_text": "ssh student@192.168.1.2:",
+      "family": "ssh",
+      "re_reads": 13
+    },
+    {
+      "command_text": "192.168.0.5 $ set payload cmd/unix/reverse_bash",
+      "family": "set",
+      "re_reads": 13
+    },
+    {
+      "command_text": "192.168.0.5 $ python3 -c \"key = bytes.fromhex(\\",
+      "family": "python3",
+      "re_reads": 12
+    },
+    {
+      "command_text": "192.168.0.5 $ set payload cmd/unix/reverse_perl",
+      "family": "set",
+      "re_reads": 12
+    },
+    {
+      "command_text": "192.168.0.5 $ set payload cmd/unix/reverse_python",
+      "family": "set",
+      "re_reads": 12
+    },
+    {
+      "command_text": "192.168.5.3 $ curl -o msfinstall https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfinstall && chmod +x msfinstall && ./msfinstall",
+      "family": "curl",
+      "re_reads": 11
+    },
+    {
+      "command_text": "192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.2",
+      "family": "hydra",
+      "re_reads": 10
+    },
+    {
+      "command_text": "192.168.1.2 $ sudo -l",
+      "family": "sudo",
+      "re_reads": 10
+    },
+    {
+      "command_text": "192.168.1.2 $",
+      "family": "unknown",
+      "re_reads": 9
+    }
+  ],
+  "top_repeated_families": [
+    {
+      "avoided_token_ratio_on_rereads": 0.9944281509540873,
+      "cumulative_carried_context_tokens_avoided": 1305231,
+      "delta_serve_opportunities": 40,
+      "events": 88,
+      "exact_cache_opportunities": 0,
+      "family": "search",
+      "point_tokens_avoided": 379078,
+      "protected_lane_blocks": 40,
+      "re_read_output_tokens": 381202,
+      "re_reads": 40,
+      "repeated_work_share": 0.45454545454545453
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.5579119599760863,
+      "cumulative_carried_context_tokens_avoided": 512861,
+      "delta_serve_opportunities": 137,
+      "events": 399,
+      "exact_cache_opportunities": 0,
+      "family": "curl",
+      "point_tokens_avoided": 35462,
+      "protected_lane_blocks": 137,
+      "re_read_output_tokens": 63562,
+      "re_reads": 137,
+      "repeated_work_share": 0.3433583959899749
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.37622397761869497,
+      "cumulative_carried_context_tokens_avoided": 251793,
+      "delta_serve_opportunities": 142,
+      "events": 195,
+      "exact_cache_opportunities": 0,
+      "family": "unknown",
+      "point_tokens_avoided": 18289,
+      "protected_lane_blocks": 142,
+      "re_read_output_tokens": 48612,
+      "re_reads": 142,
+      "repeated_work_share": 0.7282051282051282
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.8643938105764326,
+      "cumulative_carried_context_tokens_avoided": 208973,
+      "delta_serve_opportunities": 52,
+      "events": 298,
+      "exact_cache_opportunities": 0,
+      "family": "nmap",
+      "point_tokens_avoided": 10167,
+      "protected_lane_blocks": 52,
+      "re_read_output_tokens": 11762,
+      "re_reads": 52,
+      "repeated_work_share": 0.174496644295302
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.6555196901226598,
+      "cumulative_carried_context_tokens_avoided": 201954,
+      "delta_serve_opportunities": 126,
+      "events": 234,
+      "exact_cache_opportunities": 0,
+      "family": "set",
+      "point_tokens_avoided": 10154,
+      "protected_lane_blocks": 126,
+      "re_read_output_tokens": 15490,
+      "re_reads": 126,
+      "repeated_work_share": 0.5384615384615384
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.8031998326884868,
+      "cumulative_carried_context_tokens_avoided": 173623,
+      "delta_serve_opportunities": 31,
+      "events": 88,
+      "exact_cache_opportunities": 0,
+      "family": "use",
+      "point_tokens_avoided": 7681,
+      "protected_lane_blocks": 31,
+      "re_read_output_tokens": 9563,
+      "re_reads": 31,
+      "repeated_work_share": 0.3522727272727273
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.42842531914087656,
+      "cumulative_carried_context_tokens_avoided": 155406,
+      "delta_serve_opportunities": 62,
+      "events": 93,
+      "exact_cache_opportunities": 0,
+      "family": "python3",
+      "point_tokens_avoided": 11310,
+      "protected_lane_blocks": 62,
+      "re_read_output_tokens": 26399,
+      "re_reads": 62,
+      "repeated_work_share": 0.6666666666666666
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.4598986181515173,
+      "cumulative_carried_context_tokens_avoided": 92589,
+      "delta_serve_opportunities": 66,
+      "events": 85,
+      "exact_cache_opportunities": 0,
+      "family": "run",
+      "point_tokens_avoided": 6623,
+      "protected_lane_blocks": 66,
+      "re_read_output_tokens": 14401,
+      "re_reads": 66,
+      "repeated_work_share": 0.7764705882352941
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.1844817527711156,
+      "cumulative_carried_context_tokens_avoided": 83156,
+      "delta_serve_opportunities": 30,
+      "events": 54,
+      "exact_cache_opportunities": 0,
+      "family": "msfconsole",
+      "point_tokens_avoided": 2846,
+      "protected_lane_blocks": 30,
+      "re_read_output_tokens": 15427,
+      "re_reads": 30,
+      "repeated_work_share": 0.5555555555555556
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.3876691345417411,
+      "cumulative_carried_context_tokens_avoided": 78928,
+      "delta_serve_opportunities": 68,
+      "events": 163,
+      "exact_cache_opportunities": 0,
+      "family": "ssh",
+      "point_tokens_avoided": 3037,
+      "protected_lane_blocks": 68,
+      "re_read_output_tokens": 7834,
+      "re_reads": 68,
+      "repeated_work_share": 0.4171779141104294
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.7882416984213392,
+      "cumulative_carried_context_tokens_avoided": 76401,
+      "delta_serve_opportunities": 7,
+      "events": 30,
+      "exact_cache_opportunities": 0,
+      "family": "searchsploit",
+      "point_tokens_avoided": 2896,
+      "protected_lane_blocks": 7,
+      "re_read_output_tokens": 3674,
+      "re_reads": 7,
+      "repeated_work_share": 0.23333333333333334
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.7635549660089538,
+      "cumulative_carried_context_tokens_avoided": 75229,
+      "delta_serve_opportunities": 32,
+      "events": 108,
+      "exact_cache_opportunities": 0,
+      "family": "find",
+      "point_tokens_avoided": 4605,
+      "protected_lane_blocks": 32,
+      "re_read_output_tokens": 6031,
+      "re_reads": 32,
+      "repeated_work_share": 0.2962962962962963
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.7557692307692307,
+      "cumulative_carried_context_tokens_avoided": 53096,
+      "delta_serve_opportunities": 5,
+      "events": 18,
+      "exact_cache_opportunities": 0,
+      "family": "show",
+      "point_tokens_avoided": 1572,
+      "protected_lane_blocks": 5,
+      "re_read_output_tokens": 2080,
+      "re_reads": 5,
+      "repeated_work_share": 0.2777777777777778
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.9219653179190751,
+      "cumulative_carried_context_tokens_avoided": 51799,
+      "delta_serve_opportunities": 22,
+      "events": 105,
+      "exact_cache_opportunities": 0,
+      "family": "cat",
+      "point_tokens_avoided": 8613,
+      "protected_lane_blocks": 22,
+      "re_read_output_tokens": 9342,
+      "re_reads": 22,
+      "repeated_work_share": 0.20952380952380953
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.9920127795527156,
+      "cumulative_carried_context_tokens_avoided": 37358,
+      "delta_serve_opportunities": 10,
+      "events": 107,
+      "exact_cache_opportunities": 0,
+      "family": "ls",
+      "point_tokens_avoided": 19872,
+      "protected_lane_blocks": 10,
+      "re_read_output_tokens": 20032,
+      "re_reads": 10,
+      "repeated_work_share": 0.09345794392523364
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.980884109916368,
+      "cumulative_carried_context_tokens_avoided": 33661,
+      "delta_serve_opportunities": 1,
+      "events": 7,
+      "exact_cache_opportunities": 0,
+      "family": "info",
+      "point_tokens_avoided": 821,
+      "protected_lane_blocks": 1,
+      "re_read_output_tokens": 837,
+      "re_reads": 1,
+      "repeated_work_share": 0.14285714285714285
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.7896541869105459,
+      "cumulative_carried_context_tokens_avoided": 29356,
+      "delta_serve_opportunities": 22,
+      "events": 31,
+      "exact_cache_opportunities": 0,
+      "family": "write_file",
+      "point_tokens_avoided": 2763,
+      "protected_lane_blocks": 22,
+      "re_read_output_tokens": 3499,
+      "re_reads": 22,
+      "repeated_work_share": 0.7096774193548387
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.9031290184312044,
+      "cumulative_carried_context_tokens_avoided": 29089,
+      "delta_serve_opportunities": 12,
+      "events": 77,
+      "exact_cache_opportunities": 0,
+      "family": "sudo",
+      "point_tokens_avoided": 2107,
+      "protected_lane_blocks": 12,
+      "re_read_output_tokens": 2333,
+      "re_reads": 12,
+      "repeated_work_share": 0.15584415584415584
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.9389312977099237,
+      "cumulative_carried_context_tokens_avoided": 28430,
+      "delta_serve_opportunities": 2,
+      "events": 8,
+      "exact_cache_opportunities": 0,
+      "family": "sessions",
+      "point_tokens_avoided": 492,
+      "protected_lane_blocks": 2,
+      "re_read_output_tokens": 524,
+      "re_reads": 2,
+      "repeated_work_share": 0.25
+    },
+    {
+      "avoided_token_ratio_on_rereads": 0.6257213520197856,
+      "cumulative_carried_context_tokens_avoided": 25376,
+      "delta_serve_opportunities": 7,
+      "events": 14,
+      "exact_cache_opportunities": 0,
+      "family": "exploit",
+      "point_tokens_avoided": 1518,
+      "protected_lane_blocks": 7,
+      "re_read_output_tokens": 2426,
+      "re_reads": 7,
+      "repeated_work_share": 0.5
+    }
+  ]
+}
