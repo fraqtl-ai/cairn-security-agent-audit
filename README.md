@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
+  <a href="#local-ui">Local UI</a> ·
   <a href="#try-your-own-logs">Try your logs</a> ·
   <a href="#what-the-report-shows">Report output</a> ·
   <a href="#product-direction">Product direction</a>
@@ -79,6 +80,24 @@ read examples. For a larger public benchmark report, open:
 ```text
 examples/autopenbench/report.html
 ```
+
+## Local UI
+
+Run the dependency-free localhost UI:
+
+```bash
+python3 cairn_security_audit_ui.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:8787
+```
+
+The UI lets you enter a local JSON/JSONL file or folder, run the same audit
+pipeline, review the main metrics, and open `report.html`, `summary.md`, and
+`summary.json`. Logs stay on the machine running the UI.
 
 ## Try Your Own Logs
 
