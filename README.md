@@ -9,9 +9,11 @@
 </p>
 
 <p align="center">
+  <a href="docs/CACHE_CONTROL_FOR_SECURITY_AGENTS.md">Proof page</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#local-ui">Local UI</a> ·
   <a href="#try-your-own-logs">Try your logs</a> ·
+  <a href="#have-different-logs">One redacted event</a> ·
   <a href="#what-the-report-shows">Report output</a> ·
   <a href="#product-direction">Product direction</a>
 </p>
@@ -31,6 +33,20 @@ would exact replay be stale or unsafe because target/session state changed?
 This repository is the public evaluation package. It is local, CLI-first, and
 audit-only. It does not run pentests, does not need live target access, and does
 not auto-serve cached outputs.
+
+CAIRN is cache-control for security agents, not generic caching:
+
+```text
+Agent trace
+  -> normalize tool events
+  -> compare protected target/session state
+  -> choose the safest action
+
+same work + same protected state      -> EXACT_CACHE
+related work + changed/partial state  -> DELTA_SERVE
+uncertain or first-seen work           -> LIVE_CALL
+unsafe protected-state mismatch        -> BLOCK_REUSE
+```
 
 > **Demo/evaluation scope:** this repo is the audit slice of CAIRN, not the full
 > runtime product. The protected runtime sidecar, production serving layer,
@@ -177,6 +193,16 @@ stale-risk structure, but token-savings and delta-serving estimates will be
 weaker. If target/session fingerprints are missing, CAIRN can still run with
 conservative proxy fingerprints, but real fingerprints make the protected-lane
 analysis stronger.
+
+## Have Different Logs?
+
+If your logs do not map cleanly, do not prepare a full export first. Send or inspect one redacted event instead. The minimum useful shape is:
+
+```text
+session_id, timestamp or step, tool name, tool input/command, output/observation, target/session state if available
+```
+
+See [One Redacted Event](docs/ONE_REDACTED_EVENT.md) for exactly what to share and what to redact. One event is enough to adapt the mapper; the full audit can still run locally inside your environment.
 
 ## What The Report Shows
 

@@ -82,3 +82,7 @@ python3 cairn_inspect_log_schema.py \
 
 Then either run directly or map the fields into the preferred JSONL format.
 
+
+## Fastest Design-Partner Path
+
+If mapping is unclear, do not prepare a full export first. Share or inspect one redacted event using the checklist in [One Redacted Event](ONE_REDACTED_EVENT.md). The full audit can still run locally after the mapper fits your trace shape.
