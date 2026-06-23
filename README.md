@@ -10,6 +10,7 @@
 
 <p align="center">
   <a href="docs/CACHE_CONTROL_FOR_SECURITY_AGENTS.md">Proof page</a> ·
+  <a href="OPEN_CORE.md">Open-core</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#local-ui">Local UI</a> ·
   <a href="#try-your-own-logs">Try your logs</a> ·
@@ -30,9 +31,9 @@ Are AI-pentest agents repeatedly re-reading expensive tool outputs, and where
 would exact replay be stale or unsafe because target/session state changed?
 ```
 
-This repository is the public evaluation package. It is local, CLI-first, and
+This repository is the free, open-source audit slice of CAIRN. It is local, CLI-first, and
 audit-only. It does not run pentests, does not need live target access, and does
-not auto-serve cached outputs.
+not auto-serve cached outputs. The commercial CAIRN Runtime is a separate protected sidecar for production reuse decisions.
 
 CAIRN is cache-control for security agents, not generic caching:
 
@@ -48,11 +49,11 @@ uncertain or first-seen work           -> LIVE_CALL
 unsafe protected-state mismatch        -> BLOCK_REUSE
 ```
 
-> **Demo/evaluation scope:** this repo is the audit slice of CAIRN, not the full
+> **Open-core scope:** this repo is the open audit slice of CAIRN, not the full
 > runtime product. The protected runtime sidecar, production serving layer,
-> deeper grouping roadmap, and broader fraQtl optimization work are not included
-> here. Use this repo to test whether a repeated-work signal exists in your
-> AI-pentest traces.
+> enterprise dashboard/history, custom mappers, support, and commercial deployment
+> are not included here. Use this repo to test whether a repeated-work signal
+> exists in your AI-pentest traces.
 
 ## What It Does
 
@@ -76,6 +77,12 @@ cd cairn-security-agent-audit
 ```
 
 Run the included pentest sample:
+
+```bash
+./demo.sh
+```
+
+Equivalent CLI command:
 
 ```bash
 python3 cairn_pilot_from_raw_logs.py \
@@ -263,6 +270,14 @@ Prior output can still shrink context/reporting burden while staying live-aware.
 Repeated work exists, but reuse should be blocked.
 ```
 
+## Open-Core Model
+
+This repository is MIT-licensed and contains the local audit slice: CLI, local UI, schema inspector, sample traces, and report generation.
+
+The paid/commercial layer is CAIRN Runtime: a protected sidecar for production reuse decisions, custom trace mappers, dashboard/history, deployment support, and enterprise licensing.
+
+See [Open-Core Model](OPEN_CORE.md).
+
 ## Product Direction
 
 This repository is the audit slice, not the full CAIRN runtime product.
@@ -296,4 +311,6 @@ production serving layer.
 
 ## License
 
-Evaluation package. Copyright fraQtl. Do not redistribute without permission.
+MIT License. See [LICENSE](LICENSE).
+
+Commercial CAIRN Runtime, private integrations, managed deployments, support, and enterprise licensing are separate from this open audit package. See [Open-Core Model](OPEN_CORE.md).

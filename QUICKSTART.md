@@ -3,6 +3,12 @@
 ## 1. Run The Sample
 
 ```bash
+./demo.sh
+```
+
+Equivalent CLI command:
+
+```bash
 python3 cairn_pilot_from_raw_logs.py \
   --input samples/pentest_trace_sample.jsonl \
   --out report \
