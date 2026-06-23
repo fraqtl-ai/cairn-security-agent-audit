@@ -49,7 +49,7 @@ def events_from_records(records: list[dict]) -> list[audit.Event]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Normalize security-agent logs, then run the CAIRN local audit report.")
     parser.add_argument("--input", type=Path, required=True, help="Raw JSON, JSONL, parquet, or directory of logs.")
-    parser.add_argument("--out", type=Path, required=True, help="Report output directory.")
+    parser.add_argument("--out", type=Path, default=None, help="Report output directory. Optional when using --json-only.")
     parser.add_argument("--source", default="auto", help="Reserved for compatibility; auto is recommended.")
     parser.add_argument("--glob", default=None, help="Glob when --input is a directory.")
     parser.add_argument("--max-rows", type=int, default=0)
@@ -66,6 +66,16 @@ def main() -> None:
         action="store_true",
         help="Do not write cleaned_trace.jsonl. Use this for larger public runs where only compact receipts should persist.",
     )
+    parser.add_argument(
+        "--json-only",
+        action="store_true",
+        help="Print the full audit JSON to stdout and skip writing report files.",
+    )
+    parser.add_argument(
+        "--html",
+        action="store_true",
+        help="Also write report.html. By default CAIRN writes terminal JSON plus summary.json/summary.md.",
+    )
     args = parser.parse_args()
 
     loaded: list[tuple[Path, dict]] = []
@@ -80,8 +90,12 @@ def main() -> None:
     )
     records, ingest_stats = ingest_agent_trace.convert_objects(loaded, args.source, ingest_args)
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    normalized_path = args.out / "cleaned_trace.jsonl"
+    if args.json_only:
+        out_dir = None
+    else:
+        out_dir = args.out or Path("report")
+        out_dir.mkdir(parents=True, exist_ok=True)
+    normalized_path = (out_dir / "cleaned_trace.jsonl") if out_dir else Path("cleaned_trace.jsonl")
     if args.no_cleaned_trace:
         events = events_from_records(records)
     else:
@@ -95,20 +109,29 @@ def main() -> None:
         "cleaned_trace_written": not args.no_cleaned_trace,
     }
 
-    audit.write_json(args.out / "summary.json", result)
-    audit.write_markdown(args.out / "summary.md", result, args.input)
-    audit.write_html(args.out / "report.html", result, args.input)
-    (args.out / "normalization_summary.json").write_text(
+    if args.json_only:
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+
+    assert out_dir is not None
+    audit.write_json(out_dir / "summary.json", result)
+    audit.write_markdown(out_dir / "summary.md", result, args.input)
+    if args.html:
+        audit.write_html(out_dir / "report.html", result, args.input)
+    (out_dir / "normalization_summary.json").write_text(
         json.dumps(result["normalization"], indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
     print(json.dumps(result["summary"], indent=2, sort_keys=True))
     if args.no_cleaned_trace:
-        print("cleaned trace -> skipped")
+        print("cleaned_trace: skipped")
     else:
-        print(f"cleaned trace -> {normalized_path}")
-    print(f"report -> {args.out}")
+        print(f"cleaned_trace: {normalized_path}")
+    print(f"summary_json: {out_dir / 'summary.json'}")
+    print(f"summary_md: {out_dir / 'summary.md'}")
+    if args.html:
+        print(f"report_html: {out_dir / 'report.html'}")
 
 
 if __name__ == "__main__":

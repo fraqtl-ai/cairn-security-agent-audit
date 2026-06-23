@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cairn-security-agent-audit"
+version = "0.1.0"
+description = "Local/offline audit for AI security-agent traces: repeated tool-output work, stale replay risk, and token-savings reports."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+  { name = "fraQtl" }
+]
+keywords = ["ai-agents", "security", "pentest", "audit", "caching", "observability"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/fraqtl-ai/cairn-security-agent-audit"
+Repository = "https://github.com/fraqtl-ai/cairn-security-agent-audit"
+Issues = "https://github.com/fraqtl-ai/cairn-security-agent-audit/issues"
+
+[project.scripts]
+cairn-audit = "cairn_pilot_from_raw_logs:main"
+cairn-inspect = "cairn_inspect_log_schema:main"
+cairn-demo = "cairn_demo:main"
+
+[tool.setuptools]
+py-modules = [
+  "cairn_audit_agent_logs",
+  "cairn_inspect_log_schema",
+  "cairn_pilot_from_raw_logs",
+  "cairn_security_audit_ui",
+  "cairn_demo"
+]
+packages = ["pilot", "cairn_security_agent_audit"]
+
+[tool.setuptools.package-data]
+cairn_security_agent_audit = ["samples/*.jsonl"]

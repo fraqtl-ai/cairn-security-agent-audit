@@ -1,40 +1,62 @@
 # Quickstart
 
-## 1. Run The Sample
+## 1. Install Locally From The Repo
 
 ```bash
-./demo.sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-Equivalent CLI command:
+After PyPI release, this becomes:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
-  --input samples/pentest_trace_sample.jsonl \
-  --out report \
-  --price-input-per-m 3.0
+pip install cairn-security-agent-audit
 ```
 
-Open:
+## 2. Run The Sample In The Terminal
+
+```bash
+cairn-demo
+```
+
+This prints the audit summary and writes:
 
 ```text
-report/report.html
+report/summary.json
+report/summary.md
+report/normalization_summary.json
 ```
 
-## 2. Run Your Own JSONL
+Terminal-only JSON:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
+cairn-demo --json-only | less
+```
+
+## 3. Run Your Own JSONL
+
+```bash
+cairn-audit \
   --input your_trace.jsonl \
   --out report \
   --price-input-per-m 3.0 \
   --no-cleaned-trace
 ```
 
-## 3. Run A Directory
+Terminal-only JSON:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
+cairn-audit \
+  --input your_trace.jsonl \
+  --price-input-per-m 3.0 \
+  --json-only > cairn-summary.json
+```
+
+## 4. Run A Directory
+
+```bash
+cairn-audit \
   --input logs/ \
   --glob '*.json' \
   --out report \
@@ -42,7 +64,15 @@ python3 cairn_pilot_from_raw_logs.py \
   --no-cleaned-trace
 ```
 
-## 4. Expected Input Shape
+## 5. Inspect Unknown Logs First
+
+```bash
+cairn-inspect \
+  --input your_trace.jsonl \
+  --out schema_inspection.json
+```
+
+## 6. Expected Input Shape
 
 One JSON object per tool event:
 
@@ -63,4 +93,3 @@ before/after fingerprint if available
 If fingerprints are unavailable, CAIRN will infer a conservative proxy from the
 trace shape. Real target/session fingerprints make the protected-lane result
 stronger.
-

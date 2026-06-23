@@ -12,7 +12,6 @@
   <a href="docs/CACHE_CONTROL_FOR_SECURITY_AGENTS.md">Proof page</a> ·
   <a href="OPEN_CORE.md">Open-core</a> ·
   <a href="#quickstart">Quickstart</a> ·
-  <a href="#local-ui">Local UI</a> ·
   <a href="#try-your-own-logs">Try your logs</a> ·
   <a href="#have-different-logs">One redacted event</a> ·
   <a href="#what-the-report-shows">Report output</a> ·
@@ -65,69 +64,52 @@ Given JSON/JSONL security-agent logs, CAIRN:
 - marks exact-cache stale-risk events,
 - classifies `LIVE_CALL`, `EXACT_CACHE`, `DELTA_SERVE`, and `BLOCK_REUSE`,
 - estimates point-token and carried-context savings,
-- writes `summary.json`, `summary.md`, and `report.html`.
+- writes terminal JSON plus `summary.json` and `summary.md`; `report.html` is optional with `--html`.
 
 ## Quickstart
 
-Clone:
+Install from the repo:
 
 ```bash
 git clone https://github.com/fraqtl-ai/cairn-security-agent-audit.git
 cd cairn-security-agent-audit
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+After PyPI release, this becomes:
+
+```bash
+pip install cairn-security-agent-audit
 ```
 
 Run the included pentest sample:
 
 ```bash
-./demo.sh
+cairn-demo
 ```
 
-Equivalent CLI command:
+Terminal-only JSON:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
-  --input samples/pentest_trace_sample.jsonl \
-  --out report \
-  --price-input-per-m 3.0
+cairn-demo --json-only | less
 ```
 
-Open:
+From a repo clone, `./demo.sh` also works without installing.
 
-```text
-report/report.html
-```
-
-The sample produces a small report with repeated `nmap`, `curl`, and shell/file
-read examples. For a larger public benchmark report, open:
+The sample prints a JSON summary in the terminal and writes JSON/Markdown receipts. For a larger public benchmark HTML example, open:
 
 ```text
 examples/autopenbench/report.html
 ```
-
-## Local UI
-
-Run the dependency-free localhost UI:
-
-```bash
-python3 cairn_security_audit_ui.py
-```
-
-Open:
-
-```text
-http://127.0.0.1:8787
-```
-
-The UI lets you enter a local JSON/JSONL file or folder, run the same audit
-pipeline, review the main metrics, and open `report.html`, `summary.md`, and
-`summary.json`. Logs stay on the machine running the UI.
 
 ## Try Your Own Logs
 
 If your trace is JSONL:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
+cairn-audit \
   --input your_trace.jsonl \
   --out report \
   --price-input-per-m 3.0 \
@@ -137,7 +119,7 @@ python3 cairn_pilot_from_raw_logs.py \
 If your trace is one JSON file:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
+cairn-audit \
   --input your_trace.json \
   --out report \
   --price-input-per-m 3.0 \
@@ -147,7 +129,7 @@ python3 cairn_pilot_from_raw_logs.py \
 If your traces are a directory of JSON logs:
 
 ```bash
-python3 cairn_pilot_from_raw_logs.py \
+cairn-audit \
   --input logs/ \
   --glob '*.json' \
   --out report \
@@ -160,7 +142,6 @@ Outputs:
 ```text
 report/summary.json
 report/summary.md
-report/report.html
 report/normalization_summary.json
 ```
 
@@ -187,7 +168,7 @@ input/output token counts if available
 If you do not know whether your export has the right fields, inspect the shape:
 
 ```bash
-python3 cairn_inspect_log_schema.py \
+cairn-inspect \
   --input your_trace.jsonl \
   --out report/schema_inspection.json
 ```
@@ -272,7 +253,7 @@ Repeated work exists, but reuse should be blocked.
 
 ## Open-Core Model
 
-This repository is MIT-licensed and contains the local audit slice: CLI, local UI, schema inspector, sample traces, and report generation.
+This repository is MIT-licensed and contains the local audit slice: CLI, schema inspector, sample traces, and JSON/Markdown report generation. HTML output is available, but the main product path is terminal-first.
 
 The paid/commercial layer is CAIRN Runtime: a protected sidecar for production reuse decisions, custom trace mappers, dashboard/history, deployment support, and enterprise licensing.
 
