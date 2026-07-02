@@ -18,6 +18,7 @@ import os
 import re
 import time
 from collections import Counter, defaultdict
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,8 @@ class Event:
     output_tokens: int
     protected: dict[str, str]
     raw_shape: str
+    ts: float | None = None
+    has_output: bool = False
 
     @property
     def work_key(self) -> tuple[str, str, str]:
@@ -239,6 +242,31 @@ def infer_session_id(row: dict[str, Any], fallback: str) -> str:
     return str(value or fallback)
 
 
+def parse_timestamp(row: dict[str, Any]) -> float | None:
+    raw = first_present(
+        row,
+        ("timestamp", "ts", "time", "created_at", "start_time", "started_at", "event_time", "@timestamp"),
+        None,
+    )
+    if raw in (None, ""):
+        raw = nested_get(row, ("metadata", "timestamp"), None)
+    if raw in (None, "") or isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
 def normalize_row(row: dict[str, Any], index: int, fallback_session: str) -> Event | None:
     command = command_text_from_row(row).strip()
     tool_name = str(first_present(row, ("tool_name", "tool", "name"), "") or "")
@@ -253,6 +281,10 @@ def normalize_row(row: dict[str, Any], index: int, fallback_session: str) -> Eve
         return None
     output_text = output_text_from_row(row)
     tokens = output_tokens_from_row(row, output_text)
+    explicit_output_hash = first_present(
+        row, ("stdout_sha256", "stderr_sha256", "output_sha256", "output_hash", "response_hash", "content_hash"), ""
+    )
+    has_output = bool(output_text) or bool(explicit_output_hash)
     cwd = str(first_present(row, ("cwd", "working_dir", "repo_root"), "") or nested_get(row, ("before", "cwd"), ""))
     return Event(
         index=index,
@@ -266,48 +298,57 @@ def normalize_row(row: dict[str, Any], index: int, fallback_session: str) -> Eve
         output_tokens=tokens,
         protected=protected_from_row(row, cwd, tool_name or family),
         raw_shape=source,
+        ts=parse_timestamp(row),
+        has_output=has_output,
     )
 
 
-def load_objects(path: Path) -> list[dict[str, Any]]:
+def load_objects(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     text = path.read_text(encoding="utf-8", errors="replace")
     stripped = text.lstrip()
     if not stripped:
-        return []
+        return [], []
     if stripped[0] in "[{":
         try:
             parsed = json.loads(text)
             if isinstance(parsed, list):
-                return [x for x in parsed if isinstance(x, dict)]
+                return [x for x in parsed if isinstance(x, dict)], []
             if isinstance(parsed, dict):
                 for key in ("events", "records", "logs", "trace", "messages"):
                     if isinstance(parsed.get(key), list):
-                        return [x for x in parsed[key] if isinstance(x, dict)]
-                return [parsed]
+                        return [x for x in parsed[key] if isinstance(x, dict)], []
+                return [parsed], []
         except json.JSONDecodeError:
             pass
 
     rows: list[dict[str, Any]] = []
+    malformed: list[str] = []
     for line_no, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
         try:
             value = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise SystemExit(f"{path}:{line_no}: invalid JSONL line: {exc}") from exc
+            malformed.append(f"{path.name}:{line_no}: {exc}")
+            continue
         if isinstance(value, dict):
             rows.append(value)
-    return rows
+    return rows, malformed
 
 
-def load_events(path: Path) -> list[Event]:
-    raw = load_objects(path)
+def load_events_verbose(path: Path) -> tuple[list[Event], list[str]]:
+    raw, malformed = load_objects(path)
     events: list[Event] = []
     fallback_session = path.stem
     for idx, row in enumerate(raw):
         event = normalize_row(row, idx, fallback_session)
         if event is not None:
             events.append(event)
+    return events, malformed
+
+
+def load_events(path: Path) -> list[Event]:
+    events, _ = load_events_verbose(path)
     return events
 
 
@@ -342,6 +383,11 @@ def recommended_action(summary: dict[str, Any]) -> str:
     rereads = summary["re_reads"]
     if rereads == 0:
         return "No pilot signal yet: provide a larger day/week of agent tool traces with outputs."
+    if summary.get("false_hits", 0) > 0:
+        return (
+            "Do not exact-cache on provenance alone yet: some provenance-matched re-reads changed output "
+            "(see false-hit rate). Delta-serve or strengthen protected fields, then re-audit."
+        )
     if ratio >= 0.30 and carried > 0:
         return "Run a one-week local pilot with the same audit and prioritize delta-serving integration for top repeated families."
     if blocks > 0:
@@ -349,6 +395,24 @@ def recommended_action(summary: dict[str, Any]) -> str:
     if ratio >= 0.10:
         return "Useful feature signal: audit a larger trace and inspect the top repeated families before integration work."
     return "Weak savings signal on this trace: collect broader logs or target a different workflow."
+
+
+def provenance_safety_note(summary: dict[str, Any]) -> str:
+    decidable = summary["provenance_decidable_rereads"]
+    false_hits = summary["false_hits"]
+    if decidable == 0:
+        return "No decidable re-reads yet (need repeated work with observable outputs on both sides)."
+    if false_hits == 0:
+        return (
+            f"0 of {decidable} provenance-matched re-reads changed output: on this trace the provenance "
+            "fingerprint is a safe exact-cache key (0.00% false-hit risk)."
+        )
+    rate = 100.0 * summary["provenance_exact_cache_false_hit_rate"]
+    return (
+        f"{false_hits} of {decidable} provenance-matched re-reads had CHANGED output ({rate:.2f}% false-hit risk): "
+        "provenance alone is not a safe exact-cache key here; delta-serve/verify or strengthen protected fields "
+        "before exact-cache serving."
+    )
 
 
 def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
@@ -371,6 +435,7 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         "live_call_actions": 0,
         "exact_cache_stale_risk_events": 0,
         "identical_rereads": 0,
+        "provenance_decidable_rereads": 0,
         "false_hits": 0,
         "stale_serves": 0,
     }
@@ -391,7 +456,13 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
     shape_counter = Counter(event.raw_shape for event in events)
     examples: list[dict[str, Any]] = []
 
-    for session_events in by_session.values():
+    for raw_session_events in by_session.values():
+        # Repeat detection depends on chronological order. Sort by timestamp when
+        # every event in the session carries one; otherwise preserve input order.
+        if raw_session_events and all(e.ts is not None for e in raw_session_events):
+            session_events = sorted(raw_session_events, key=lambda e: (e.ts, e.index))
+        else:
+            session_events = raw_session_events
         last_seen: dict[tuple[str, str, str], Event] = {}
         for idx, event in enumerate(session_events):
             family_rows[event.family]["events"] += 1
@@ -411,7 +482,8 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             family["re_read_output_tokens"] += full_tokens
 
             violations = protected_violations(prev, event)
-            same_output = prev.output_hash == event.output_hash
+            both_have_output = prev.has_output and event.has_output
+            same_output = both_have_output and prev.output_hash == event.output_hash
             if same_output:
                 totals["identical_rereads"] += 1
             if violations:
@@ -420,16 +492,30 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
                 totals["exact_cache_stale_risk_events"] += 1
 
             if not violations and same_output:
+                # Provenance matched and output was identical: exact-cache is safe.
                 action = "EXACT_CACHE"
                 served = min(full_tokens, ENVELOPE_TOKENS)
                 totals["exact_cache_opportunities"] += 1
                 family["exact_cache_opportunities"] += 1
-            elif prev.output_text and event.output_text:
+                totals["provenance_decidable_rereads"] += 1
+            elif not violations and both_have_output:
+                # Provenance matched but output CHANGED: a naive provenance-only exact
+                # cache would have served a stale/wrong result. This is the real
+                # false-hit signal. CAIRN delta-serves instead of exact-caching.
+                action = "DELTA_SERVE"
+                served = min(full_tokens, delta_tokens(prev.output_text, event.output_text))
+                totals["delta_serve_opportunities"] += 1
+                family["delta_serve_opportunities"] += 1
+                totals["false_hits"] += 1
+                totals["provenance_decidable_rereads"] += 1
+            elif violations and both_have_output:
+                # Provenance changed and both outputs present: delta-serve the change.
                 action = "DELTA_SERVE"
                 served = min(full_tokens, delta_tokens(prev.output_text, event.output_text))
                 totals["delta_serve_opportunities"] += 1
                 family["delta_serve_opportunities"] += 1
             else:
+                # Cannot certify reuse (output missing on one side): claim nothing.
                 action = "BLOCK_REUSE"
                 served = full_tokens
                 totals["block_reuse_actions"] += 1
@@ -482,6 +568,7 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         "context_multiplier_on_avoided_tokens": pct(
             totals["cumulative_carried_context_tokens_avoided"], totals["point_tokens_avoided"]
         ),
+        "provenance_exact_cache_false_hit_rate": pct(totals["false_hits"], totals["provenance_decidable_rereads"]),
         "estimated_point_input_dollars_saved": money(totals["point_tokens_avoided"], price_input_per_m),
         "estimated_carried_context_input_dollars_saved": money(
             totals["cumulative_carried_context_tokens_avoided"], price_input_per_m
@@ -489,14 +576,18 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         "price_input_per_million_tokens": price_input_per_m,
     }
     summary["recommended_next_action"] = recommended_action(summary)
+    summary["provenance_safety_note"] = provenance_safety_note(summary)
 
     return {
         "schema": "cairn_agent_log_audit_v0",
         "generated_at_unix": int(time.time()),
         "policy": (
-            "Offline audit only. EXACT_CACHE is counted only when protected fields and output hash match. "
-            "DELTA_SERVE is counted only when prior and current live output text are present. "
-            "Changed protected fields are reported as stale exact-cache risk, not served."
+            "Offline audit only. EXACT_CACHE is counted only when protected fields AND output hash match. "
+            "When protected fields match but output changed, it is counted as an exact-cache FALSE-HIT "
+            "(a naive provenance-only cache would have served a stale result) and delta-served instead. "
+            "DELTA_SERVE requires observable output text on both sides; reuse is never claimed when output "
+            "is missing on a side. Changed protected fields are reported as stale exact-cache risk, not served. "
+            "Events are ordered by timestamp within a session when timestamps are present."
         ),
         "token_estimator": "explicit output_tokens if present, otherwise bytes/4 proxy",
         "summary": summary,
@@ -513,7 +604,9 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         "caveats": [
             "This is an audit, not auto-serving.",
             "Dollar savings use the provided input-token price and should be treated as a trace-local estimate.",
+            "Carried-context tokens avoided is an upper-bound model (avoided x remaining events in session), not a measured value.",
             "Logs without live output text can show exact-cache opportunities and stale risk, but not delta-serving savings.",
+            "False-hit rate = how often a provenance-only exact cache would have served a CHANGED output; 0% means provenance is a safe key on this trace.",
             "Protected-lane quality depends on the provenance fields present in the input logs.",
         ],
     }
@@ -561,10 +654,12 @@ def write_markdown(path: Path, result: dict[str, Any], input_path: Path) -> None
             "",
             "## Safety",
             "",
-            f"- Protected-lane blocks: `{fmt_int(s['protected_lane_blocks'])}`",
+            f"- Protected-lane blocks (provenance change caught): `{fmt_int(s['protected_lane_blocks'])}`",
             f"- Exact-cache stale-risk events: `{fmt_int(s['exact_cache_stale_risk_events'])}`",
-            f"- Stale serves counted: `{fmt_int(s['stale_serves'])}`",
-            f"- False hits counted: `{fmt_int(s['false_hits'])}`",
+            f"- Provenance-matched re-reads (decidable): `{fmt_int(s['provenance_decidable_rereads'])}`",
+            f"- Exact-cache false-hits (provenance matched, output changed): "
+            f"`{fmt_int(s['false_hits'])}` (`{fmt_pct(s['provenance_exact_cache_false_hit_rate'])}`)",
+            f"- {s['provenance_safety_note']}",
             "",
             "## Top Repeated Families",
             "",
@@ -652,9 +747,11 @@ def write_html(path: Path, result: dict[str, Any], input_path: Path) -> None:
      <code>EXACT_CACHE</code> {fmt_int(result['actions']['EXACT_CACHE'])} ·
      <code>BLOCK_REUSE</code> {fmt_int(result['actions']['BLOCK_REUSE'])}</p>
   <h2>Safety</h2>
-  <p>Protected-lane blocks: <strong>{fmt_int(s['protected_lane_blocks'])}</strong>.
+  <p>Protected-lane blocks (provenance change caught): <strong>{fmt_int(s['protected_lane_blocks'])}</strong>.
      Exact-cache stale-risk events: <strong>{fmt_int(s['exact_cache_stale_risk_events'])}</strong>.
-     Stale serves counted: <strong>{fmt_int(s['stale_serves'])}</strong>.</p>
+     Exact-cache false-hits (provenance matched, output changed): <strong>{fmt_int(s['false_hits'])}</strong>
+     ({fmt_pct(s['provenance_exact_cache_false_hit_rate'])}).</p>
+  <p class="note">{html.escape(s['provenance_safety_note'])}</p>
   <h2>Top Repeated Families</h2>
   <table>
     <thead><tr><th>Family</th><th>Re-reads</th><th>Point avoided</th><th>Carried avoided</th><th>Avoided ratio</th></tr></thead>
@@ -678,14 +775,18 @@ def main() -> None:
     parser.add_argument("--price-input-per-m", type=float, default=0.0, help="Input-token price per 1M tokens.")
     args = parser.parse_args()
 
-    events = load_events(args.input)
+    events, malformed = load_events_verbose(args.input)
     result = analyze(events, args.price_input_per_m)
+    if malformed:
+        result["input_quality"] = {"malformed_lines_skipped": len(malformed), "examples": malformed[:5]}
 
     args.out.mkdir(parents=True, exist_ok=True)
     write_json(args.out / "summary.json", result)
     write_markdown(args.out / "summary.md", result, args.input)
     write_html(args.out / "report.html", result, args.input)
     print(json.dumps(result["summary"], indent=2, sort_keys=True))
+    if malformed:
+        print(f"note: skipped {len(malformed)} malformed line(s)")
     print(f"report -> {args.out}")
 
 
