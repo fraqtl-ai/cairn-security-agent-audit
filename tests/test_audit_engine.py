@@ -23,13 +23,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cairn_audit_agent_logs as audit  # noqa: E402
 
 
-def run(rows: list[dict], price: float = 0.0) -> dict:
+def run(rows: list[dict], price: float = 0.0, **kwargs) -> dict:
     events = []
     for i, row in enumerate(rows):
         ev = audit.normalize_row(row, i, row.get("session_id", "sess"))
         if ev is not None:
             events.append(ev)
-    return audit.analyze(events, price)
+    return audit.analyze(events, price, **kwargs)
 
 
 # --- core action classification -------------------------------------------------
@@ -178,6 +178,136 @@ def test_summary_exposes_new_safety_fields():
         "provenance_safety_note",
     ):
         assert key in s
+
+
+# --- hash-only traces: false hits are counted, savings are never invented --------
+
+def test_hash_only_changed_output_blocks_and_counts_false_hit():
+    """Rows carry output hashes but no text. If the hash changed, the false hit is
+    real signal — but a delta cannot be reconstructed from hashes, so no savings
+    may be claimed. Regression test for the delta_tokens('', '') == 16 overclaim."""
+    rows = [
+        {"session_id": "s", "command": "nmap host", "model": "m1",
+         "stdout_sha256": "aaa", "stdout_bytes": 4000},
+        {"session_id": "s", "command": "nmap host", "model": "m1",
+         "stdout_sha256": "bbb", "stdout_bytes": 4000},
+    ]
+    res = run(rows)
+    s = res["summary"]
+    assert s["false_hits"] == 1
+    assert s["provenance_decidable_rereads"] == 1
+    assert res["actions"]["BLOCK_REUSE"] == 1
+    assert res["actions"]["DELTA_SERVE"] == 0
+    assert s["point_tokens_avoided"] == 0
+    assert s["cumulative_carried_context_tokens_avoided"] == 0
+
+
+def test_hash_only_identical_output_is_exact_cache_opportunity():
+    rows = [
+        {"session_id": "s", "command": "nmap host", "model": "m1",
+         "stdout_sha256": "aaa", "stdout_bytes": 4000},
+        {"session_id": "s", "command": "nmap host", "model": "m1",
+         "stdout_sha256": "aaa", "stdout_bytes": 4000},
+    ]
+    res = run(rows)
+    s = res["summary"]
+    assert s["exact_cache_opportunities"] == 1
+    assert s["false_hits"] == 0
+    assert s["point_tokens_avoided"] == 1000 - 16  # 4000 bytes -> 1000 tokens, minus envelope
+
+
+def test_provenance_violation_without_text_blocks():
+    rows = [
+        {"session_id": "s", "command": "nmap host", "model": "m1",
+         "stdout_sha256": "aaa", "stdout_bytes": 4000},
+        {"session_id": "s", "command": "nmap host", "model": "m2",
+         "stdout_sha256": "bbb", "stdout_bytes": 4000},
+    ]
+    res = run(rows)
+    assert res["actions"]["BLOCK_REUSE"] == 1
+    assert res["summary"]["point_tokens_avoided"] == 0
+    assert res["summary"]["protected_lane_blocks"] == 1
+
+
+# --- dollar math: provider prompt-cache counterfactual ---------------------------
+
+def test_net_of_provider_cache_dollar_math():
+    """3-event session: A, A(identical), B. The re-read at index 1 avoids
+    output_tokens-16 point tokens; 1 event remains -> carried == avoided.
+    input $10/M, cached $1/M."""
+    rows = [
+        {"session_id": "s", "command": "cat f", "output": "X", "output_tokens": 1016, "model": "m1"},
+        {"session_id": "s", "command": "cat f", "output": "X", "output_tokens": 1016, "model": "m1"},
+        {"session_id": "s", "command": "ls", "output": "Y", "output_tokens": 5, "model": "m1"},
+    ]
+    s = run(rows, price=10.0, price_cached_input_per_m=1.0)["summary"]
+    assert s["point_tokens_avoided"] == 1000
+    assert s["cumulative_carried_context_tokens_avoided"] == 1000
+    assert abs(s["estimated_total_dollars_saved_no_provider_cache"] - 0.020) < 1e-9
+    assert abs(s["estimated_total_dollars_saved_net_of_provider_cache"] - 0.011) < 1e-9
+    assert s["price_cached_input_per_million_tokens"] == 1.0
+
+
+def test_cached_price_defaults_to_ratio_of_input():
+    s = run([{"session_id": "s", "command": "ls", "output": "A"}], price=10.0)["summary"]
+    assert abs(s["price_cached_input_per_million_tokens"] - 10.0 * audit.DEFAULT_CACHED_INPUT_RATIO) < 1e-9
+    assert "cached-input defaulted" in s["price_source"]
+
+
+def test_model_price_table_resolves_prices():
+    s = run([{"session_id": "s", "command": "ls", "output": "A"}], model="claude-sonnet-4.5")["summary"]
+    expected = audit.MODEL_PRICES["claude-sonnet-4.5"]
+    assert s["price_input_per_million_tokens"] == expected["input"]
+    assert s["price_cached_input_per_million_tokens"] == expected["cached_input"]
+    assert "built-in price table" in s["price_source"]
+
+
+# --- per-user attribution ---------------------------------------------------------
+
+def test_per_user_token_breakdown():
+    rows = [
+        {"session_id": "s", "command": "cat f", "output": "X" * 400, "model": "m1", "user_id": "alice"},
+        {"session_id": "s", "command": "cat f", "output": "X" * 400, "model": "m1", "user_id": "alice"},
+        {"session_id": "s", "command": "ls d", "output": "Y", "model": "m1", "user_id": "bob"},
+    ]
+    res = run(rows)
+    users = {u["user_id"]: u for u in res["top_users"]}
+    assert users["alice"]["re_reads"] == 1
+    assert users["alice"]["point_tokens_avoided"] > 0
+    assert users["bob"]["re_reads"] == 0
+    assert res["summary"]["attributed_users"] == 2
+
+
+# --- skipped-row accounting -------------------------------------------------------
+
+def test_skipped_rows_are_counted():
+    stats: dict[str, int] = {}
+    assert audit.normalize_row({"foo": "bar"}, 0, "s", stats) is None
+    assert audit.normalize_row({"command": "date"}, 1, "s", stats) is None  # volatile family
+    assert audit.normalize_row({"command": "nmap h", "output": "A"}, 2, "s", stats) is not None
+    assert stats == {"no_recognizable_command": 1, "volatile_family_excluded": 1}
+
+
+# --- tokenizer configuration ------------------------------------------------------
+
+def test_tokenizer_bytes_mode_is_default_and_deterministic():
+    audit.configure_tokenizer("bytes")
+    assert audit.token_estimator_name() == "bytes/4"
+    assert audit.approx_tokens("abcdefgh") == 2
+
+
+def test_tokenizer_tiktoken_when_available():
+    try:
+        import tiktoken  # noqa: F401
+    except ImportError:
+        return  # optional dependency not installed; covered in CI with extras
+    try:
+        name = audit.configure_tokenizer("tiktoken")
+        assert name == "tiktoken:o200k_base"
+        assert audit.approx_tokens("hello world, this is CAIRN") > 0
+        assert audit.approx_tokens("") == 0
+    finally:
+        audit.configure_tokenizer("bytes")
 
 
 # --- standalone runner (no pytest needed) ---------------------------------------

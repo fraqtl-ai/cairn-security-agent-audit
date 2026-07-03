@@ -27,6 +27,59 @@ from typing import Any
 ENVELOPE_TOKENS = 16
 BYTES_PER_TOKEN = 4
 MAX_EXAMPLES = 20
+
+# USD per 1M tokens. "input" = fresh input tokens; "cached_input" = provider
+# prompt-cache READ price. Prices drift — verify against the provider pricing
+# page before quoting a dollar figure externally.
+MODEL_PRICES: dict[str, dict[str, float]] = {
+    "claude-opus-4.5": {"input": 5.00, "cached_input": 0.50},
+    "claude-opus-4.1": {"input": 15.00, "cached_input": 1.50},
+    "claude-sonnet-4.5": {"input": 3.00, "cached_input": 0.30},
+    "claude-sonnet-4": {"input": 3.00, "cached_input": 0.30},
+    "claude-haiku-4.5": {"input": 1.00, "cached_input": 0.10},
+    "gpt-5": {"input": 1.25, "cached_input": 0.125},
+    "gpt-5-mini": {"input": 0.25, "cached_input": 0.025},
+    "gpt-4.1": {"input": 2.00, "cached_input": 0.50},
+    "gpt-4.1-mini": {"input": 0.40, "cached_input": 0.10},
+    "gpt-4o": {"input": 2.50, "cached_input": 1.25},
+    "o3": {"input": 2.00, "cached_input": 0.50},
+}
+# When no cached-input price is known, assume the provider caches carried
+# context at the cheapest common rate (Anthropic cache-read = 0.1x input).
+# This makes the net-of-provider-cache figure a conservative floor.
+DEFAULT_CACHED_INPUT_RATIO = 0.1
+
+_TOKEN_ENCODER: Any = None
+_TOKEN_ESTIMATOR_NAME = "bytes/4"
+
+
+def configure_tokenizer(mode: str = "auto") -> str:
+    """Select the token estimator: 'bytes', 'tiktoken', or 'auto' (tiktoken if installed)."""
+    global _TOKEN_ENCODER, _TOKEN_ESTIMATOR_NAME
+    if mode not in {"auto", "tiktoken", "bytes"}:
+        raise ValueError(f"unknown tokenizer mode: {mode!r}")
+    if mode == "bytes":
+        _TOKEN_ENCODER = None
+        _TOKEN_ESTIMATOR_NAME = "bytes/4"
+        return _TOKEN_ESTIMATOR_NAME
+    try:
+        import tiktoken
+
+        _TOKEN_ENCODER = tiktoken.get_encoding("o200k_base")
+        _TOKEN_ESTIMATOR_NAME = "tiktoken:o200k_base"
+    except Exception as exc:
+        if mode == "tiktoken":
+            raise SystemExit(
+                "tiktoken requested but unavailable "
+                f"({exc}); install with: pip install 'cairn-security-agent-audit[tokens]'"
+            )
+        _TOKEN_ENCODER = None
+        _TOKEN_ESTIMATOR_NAME = "bytes/4"
+    return _TOKEN_ESTIMATOR_NAME
+
+
+def token_estimator_name() -> str:
+    return _TOKEN_ESTIMATOR_NAME
 VOLATILE_FAMILIES = {
     "date",
     "ps",
@@ -76,6 +129,8 @@ class Event:
     raw_shape: str
     ts: float | None = None
     has_output: bool = False
+    has_output_text: bool = False
+    user_id: str = ""
 
     @property
     def work_key(self) -> tuple[str, str, str]:
@@ -83,6 +138,13 @@ class Event:
 
 
 def approx_tokens(text: str = "", byte_count: int | None = None) -> int:
+    if _TOKEN_ENCODER is not None and byte_count is None:
+        if not text:
+            return 0
+        try:
+            return max(1, len(_TOKEN_ENCODER.encode(text, disallowed_special=())))
+        except Exception:
+            pass
     if byte_count is None:
         byte_count = len(text.encode("utf-8", errors="replace"))
     return max(1, (byte_count + BYTES_PER_TOKEN - 1) // BYTES_PER_TOKEN) if byte_count else 0
@@ -234,6 +296,18 @@ def protected_from_row(row: dict[str, Any], cwd: str, tool_name: str) -> dict[st
     return protected
 
 
+def infer_user_id(row: dict[str, Any]) -> str:
+    value = first_present(row, ("user_id", "user", "username", "actor", "developer_id", "email"), "")
+    if isinstance(value, dict):
+        value = first_present(value, ("id", "email", "name"), "")
+    if not value:
+        for path in (("metadata", "user_id"), ("metadata", "user"), ("metadata", "email")):
+            value = nested_get(row, path, "")
+            if value:
+                break
+    return str(value or "")
+
+
 def infer_session_id(row: dict[str, Any], fallback: str) -> str:
     value = first_present(row, ("session_id", "conversation_id", "thread_id", "trace_id", "run_id", "trajectory_id"), "")
     if value:
@@ -267,17 +341,26 @@ def parse_timestamp(row: dict[str, Any]) -> float | None:
         return None
 
 
-def normalize_row(row: dict[str, Any], index: int, fallback_session: str) -> Event | None:
+def normalize_row(
+    row: dict[str, Any],
+    index: int,
+    fallback_session: str,
+    skip_stats: dict[str, int] | None = None,
+) -> Event | None:
     command = command_text_from_row(row).strip()
     tool_name = str(first_present(row, ("tool_name", "tool", "name"), "") or "")
     if not command and tool_name:
         command = tool_name
     if not command:
+        if skip_stats is not None:
+            skip_stats["no_recognizable_command"] = skip_stats.get("no_recognizable_command", 0) + 1
         return None
     family = command_head(command, tool_name)
     source = str(row.get("source") or row.get("schema") or row.get("type") or "generic_json")
     security_sources = {"autopenbench", "security_agent_log", "pentest_steps", "cairn_security_agent_trace_v0"}
     if family in VOLATILE_FAMILIES and source not in security_sources:
+        if skip_stats is not None:
+            skip_stats["volatile_family_excluded"] = skip_stats.get("volatile_family_excluded", 0) + 1
         return None
     output_text = output_text_from_row(row)
     tokens = output_tokens_from_row(row, output_text)
@@ -300,6 +383,8 @@ def normalize_row(row: dict[str, Any], index: int, fallback_session: str) -> Eve
         raw_shape=source,
         ts=parse_timestamp(row),
         has_output=has_output,
+        has_output_text=bool(output_text),
+        user_id=infer_user_id(row),
     )
 
 
@@ -336,14 +421,20 @@ def load_objects(path: Path) -> tuple[list[dict[str, Any]], list[str]]:
     return rows, malformed
 
 
-def load_events_verbose(path: Path) -> tuple[list[Event], list[str]]:
+def load_events_with_stats(path: Path) -> tuple[list[Event], list[str], dict[str, int]]:
     raw, malformed = load_objects(path)
     events: list[Event] = []
+    skip_stats: dict[str, int] = {}
     fallback_session = path.stem
     for idx, row in enumerate(raw):
-        event = normalize_row(row, idx, fallback_session)
+        event = normalize_row(row, idx, fallback_session, skip_stats)
         if event is not None:
             events.append(event)
+    return events, malformed, skip_stats
+
+
+def load_events_verbose(path: Path) -> tuple[list[Event], list[str]]:
+    events, malformed, _ = load_events_with_stats(path)
     return events, malformed
 
 
@@ -374,6 +465,35 @@ def pct(n: int | float, d: int | float) -> float:
 
 def money(tokens: int, price_per_m: float) -> float:
     return tokens * price_per_m / 1_000_000.0
+
+
+def resolve_prices(
+    price_input_per_m: float,
+    price_cached_input_per_m: float | None,
+    model: str,
+) -> tuple[float, float, str]:
+    """Return (input price, cached-input price, provenance note) per 1M tokens."""
+    source = "flags"
+    if model:
+        key = model.strip().lower()
+        table = MODEL_PRICES.get(key)
+        if table is None:
+            for name, row in MODEL_PRICES.items():
+                if key.startswith(name):
+                    table = row
+                    break
+        if table is not None:
+            if not price_input_per_m:
+                price_input_per_m = table["input"]
+            if price_cached_input_per_m is None:
+                price_cached_input_per_m = table["cached_input"]
+            source = f"built-in price table for {model} (verify against provider pricing page)"
+        else:
+            source = f"flags (model {model!r} not in built-in price table)"
+    if price_cached_input_per_m is None:
+        price_cached_input_per_m = price_input_per_m * DEFAULT_CACHED_INPUT_RATIO
+        source += f"; cached-input defaulted to {DEFAULT_CACHED_INPUT_RATIO:.0%} of input"
+    return price_input_per_m, price_cached_input_per_m, source
 
 
 def recommended_action(summary: dict[str, Any]) -> str:
@@ -415,7 +535,15 @@ def provenance_safety_note(summary: dict[str, Any]) -> str:
     )
 
 
-def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
+def analyze(
+    events: list[Event],
+    price_input_per_m: float = 0.0,
+    price_cached_input_per_m: float | None = None,
+    model: str = "",
+) -> dict[str, Any]:
+    price_input_per_m, price_cached_input_per_m, price_source = resolve_prices(
+        price_input_per_m, price_cached_input_per_m, model
+    )
     by_session: dict[str, list[Event]] = defaultdict(list)
     for event in events:
         by_session[event.session_id].append(event)
@@ -437,7 +565,6 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         "identical_rereads": 0,
         "provenance_decidable_rereads": 0,
         "false_hits": 0,
-        "stale_serves": 0,
     }
     family_rows: dict[str, dict[str, Any]] = defaultdict(
         lambda: {
@@ -449,6 +576,15 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             "exact_cache_opportunities": 0,
             "delta_serve_opportunities": 0,
             "protected_lane_blocks": 0,
+        }
+    )
+    user_rows: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "events": 0,
+            "re_reads": 0,
+            "re_read_output_tokens": 0,
+            "point_tokens_avoided": 0,
+            "cumulative_carried_context_tokens_avoided": 0,
         }
     )
     action_counts = Counter()
@@ -466,6 +602,8 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         last_seen: dict[tuple[str, str, str], Event] = {}
         for idx, event in enumerate(session_events):
             family_rows[event.family]["events"] += 1
+            user = user_rows[event.user_id or "(unattributed)"]
+            user["events"] += 1
             prev = last_seen.get(event.work_key)
             if prev is None:
                 action_counts["LIVE_CALL"] += 1
@@ -480,9 +618,12 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             family = family_rows[event.family]
             family["re_reads"] += 1
             family["re_read_output_tokens"] += full_tokens
+            user["re_reads"] += 1
+            user["re_read_output_tokens"] += full_tokens
 
             violations = protected_violations(prev, event)
             both_have_output = prev.has_output and event.has_output
+            both_have_text = prev.has_output_text and event.has_output_text
             same_output = both_have_output and prev.output_hash == event.output_hash
             if same_output:
                 totals["identical_rereads"] += 1
@@ -501,21 +642,29 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             elif not violations and both_have_output:
                 # Provenance matched but output CHANGED: a naive provenance-only exact
                 # cache would have served a stale/wrong result. This is the real
-                # false-hit signal. CAIRN delta-serves instead of exact-caching.
-                action = "DELTA_SERVE"
-                served = min(full_tokens, delta_tokens(prev.output_text, event.output_text))
-                totals["delta_serve_opportunities"] += 1
-                family["delta_serve_opportunities"] += 1
+                # false-hit signal, counted whether or not the raw text is present.
                 totals["false_hits"] += 1
                 totals["provenance_decidable_rereads"] += 1
-            elif violations and both_have_output:
+                if both_have_text:
+                    # CAIRN delta-serves the change instead of exact-caching.
+                    action = "DELTA_SERVE"
+                    served = min(full_tokens, delta_tokens(prev.output_text, event.output_text))
+                    totals["delta_serve_opportunities"] += 1
+                    family["delta_serve_opportunities"] += 1
+                else:
+                    # Output changed but only hashes are observable: the delta cannot
+                    # be reconstructed, so no savings are claimed.
+                    action = "BLOCK_REUSE"
+                    served = full_tokens
+                    totals["block_reuse_actions"] += 1
+            elif violations and both_have_text:
                 # Provenance changed and both outputs present: delta-serve the change.
                 action = "DELTA_SERVE"
                 served = min(full_tokens, delta_tokens(prev.output_text, event.output_text))
                 totals["delta_serve_opportunities"] += 1
                 family["delta_serve_opportunities"] += 1
             else:
-                # Cannot certify reuse (output missing on one side): claim nothing.
+                # Cannot certify reuse (output missing or not reconstructable): claim nothing.
                 action = "BLOCK_REUSE"
                 served = full_tokens
                 totals["block_reuse_actions"] += 1
@@ -528,6 +677,8 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             totals["cumulative_carried_context_tokens_avoided"] += carried
             family["point_tokens_avoided"] += avoided
             family["cumulative_carried_context_tokens_avoided"] += carried
+            user["point_tokens_avoided"] += avoided
+            user["cumulative_carried_context_tokens_avoided"] += carried
 
             if len(examples) < MAX_EXAMPLES and (avoided > 0 or violations):
                 examples.append(
@@ -561,6 +712,17 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         for (family, command), count in repeat_counter.most_common(20)
     ]
 
+    top_users = []
+    for user_id, row in user_rows.items():
+        if row["events"] <= 0:
+            continue
+        item = {"user_id": user_id, **row}
+        item["repeated_work_share"] = pct(row["re_reads"], row["events"])
+        top_users.append(item)
+    top_users.sort(key=lambda r: r["cumulative_carried_context_tokens_avoided"], reverse=True)
+
+    point = totals["point_tokens_avoided"]
+    carried = totals["cumulative_carried_context_tokens_avoided"]
     summary = {
         **totals,
         "repeated_work_percent": 100.0 * pct(totals["re_reads"], totals["events"]),
@@ -569,11 +731,22 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             totals["cumulative_carried_context_tokens_avoided"], totals["point_tokens_avoided"]
         ),
         "provenance_exact_cache_false_hit_rate": pct(totals["false_hits"], totals["provenance_decidable_rereads"]),
-        "estimated_point_input_dollars_saved": money(totals["point_tokens_avoided"], price_input_per_m),
-        "estimated_carried_context_input_dollars_saved": money(
-            totals["cumulative_carried_context_tokens_avoided"], price_input_per_m
+        "attributed_users": sum(1 for u in top_users if u["user_id"] != "(unattributed)"),
+        "estimated_point_input_dollars_saved": money(point, price_input_per_m),
+        "estimated_carried_context_input_dollars_saved": money(carried, price_input_per_m),
+        # Upper bound: every avoided token priced at the fresh input rate
+        # (assumes the buyer uses no provider prompt caching at all).
+        "estimated_total_dollars_saved_no_provider_cache": money(point + carried, price_input_per_m),
+        # Conservative floor: carried-context tokens are stable-prefix traffic the
+        # provider prompt cache would mostly have served at the cached-input rate,
+        # so they are priced at cached-input; point tokens are fresh output that a
+        # prefix cache can never serve, so they stay at the full input rate.
+        "estimated_total_dollars_saved_net_of_provider_cache": (
+            money(point, price_input_per_m) + money(carried, price_cached_input_per_m)
         ),
         "price_input_per_million_tokens": price_input_per_m,
+        "price_cached_input_per_million_tokens": price_cached_input_per_m,
+        "price_source": price_source,
     }
     summary["recommended_next_action"] = recommended_action(summary)
     summary["provenance_safety_note"] = provenance_safety_note(summary)
@@ -585,11 +758,12 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
             "Offline audit only. EXACT_CACHE is counted only when protected fields AND output hash match. "
             "When protected fields match but output changed, it is counted as an exact-cache FALSE-HIT "
             "(a naive provenance-only cache would have served a stale result) and delta-served instead. "
-            "DELTA_SERVE requires observable output text on both sides; reuse is never claimed when output "
-            "is missing on a side. Changed protected fields are reported as stale exact-cache risk, not served. "
+            "DELTA_SERVE requires observable output text on both sides; when output changed but only hashes "
+            "are observable, the false hit is still counted but NO savings are claimed (BLOCK_REUSE). "
+            "Changed protected fields are reported as stale exact-cache risk, not served. "
             "Events are ordered by timestamp within a session when timestamps are present."
         ),
-        "token_estimator": "explicit output_tokens if present, otherwise bytes/4 proxy",
+        "token_estimator": f"explicit output_tokens if present, otherwise {token_estimator_name()}",
         "summary": summary,
         "actions": {
             "LIVE_CALL": action_counts["LIVE_CALL"],
@@ -600,14 +774,22 @@ def analyze(events: list[Event], price_input_per_m: float) -> dict[str, Any]:
         "input_shapes": dict(shape_counter),
         "top_repeated_families": top_families[:20],
         "top_repeated_commands": top_repeated_commands,
+        "top_users": top_users[:20],
         "top_examples": examples,
         "caveats": [
             "This is an audit, not auto-serving.",
             "Dollar savings use the provided input-token price and should be treated as a trace-local estimate.",
             "Carried-context tokens avoided is an upper-bound model (avoided x remaining events in session), not a measured value.",
-            "Logs without live output text can show exact-cache opportunities and stale risk, but not delta-serving savings.",
+            "Two dollar figures are reported: 'no_provider_cache' prices everything at the fresh input rate; "
+            "'net_of_provider_cache' prices carried-context tokens at the provider prompt-cache READ rate, because "
+            "stable-prefix context would mostly have been provider cache hits anyway. Quote the net figure to teams "
+            "already using provider prompt caching; it is the defensible floor. Note provider caches are prefix-bound "
+            "and short-TTL: they cannot reuse work across runs, sessions, or users the way certified recycling can.",
+            "Logs without live output text can show exact-cache opportunities, stale risk, and false hits, but never delta-serving savings.",
             "False-hit rate = how often a provenance-only exact cache would have served a CHANGED output; 0% means provenance is a safe key on this trace.",
+            "Sparse logs (missing cwd/model/user fields) can only overstate caution (more blocks, higher false-hit rate), never overstate savings.",
             "Protected-lane quality depends on the provenance fields present in the input logs.",
+            "Per-user rows appear when traces carry user_id/user/actor/email fields; otherwise usage is (unattributed).",
         ],
     }
 
@@ -643,6 +825,11 @@ def write_markdown(path: Path, result: dict[str, Any], input_path: Path) -> None
         f"- Context multiplier on avoided tokens: `{s['context_multiplier_on_avoided_tokens']:.2f}x`",
         f"- Estimated point-token input savings: `${s['estimated_point_input_dollars_saved']:.4f}`",
         f"- Estimated carried-context input savings: `${s['estimated_carried_context_input_dollars_saved']:.4f}`",
+        f"- Estimated total savings (no provider prompt cache): `${s['estimated_total_dollars_saved_no_provider_cache']:.4f}`",
+        f"- Estimated total savings (net of provider prompt cache): `${s['estimated_total_dollars_saved_net_of_provider_cache']:.4f}`",
+        f"- Prices: input `${s['price_input_per_million_tokens']:.2f}`/M, cached input "
+        f"`${s['price_cached_input_per_million_tokens']:.2f}`/M ({s['price_source']})",
+        f"- Token estimator: {result.get('token_estimator', 'bytes/4')}",
         "",
         "## Actions",
         "",
@@ -674,6 +861,30 @@ def write_markdown(path: Path, result: dict[str, Any], input_path: Path) -> None
             f"{fmt_int(row['cumulative_carried_context_tokens_avoided'])} | "
             f"{fmt_pct(row['avoided_token_ratio_on_rereads'])} |"
         )
+    attributed = [u for u in result.get("top_users", []) if u["user_id"] != "(unattributed)"]
+    if attributed:
+        lines.extend(
+            [
+                "",
+                "## Token Usage by User",
+                "",
+                "| User | Events | Re-reads | Point Tokens Avoided | Carried-Context Tokens Avoided |",
+                "|---|---:|---:|---:|---:|",
+            ]
+        )
+        for row in result["top_users"][:12]:
+            lines.append(
+                f"| `{row['user_id']}` | {fmt_int(row['events'])} | {fmt_int(row['re_reads'])} | "
+                f"{fmt_int(row['point_tokens_avoided'])} | "
+                f"{fmt_int(row['cumulative_carried_context_tokens_avoided'])} |"
+            )
+    quality = result.get("input_quality") or {}
+    skipped = quality.get("rows_skipped") or {}
+    if quality:
+        lines.extend(["", "## Input Quality", ""])
+        lines.append(f"- Malformed lines skipped: `{fmt_int(quality.get('malformed_lines_skipped', 0))}`")
+        for reason, count in sorted(skipped.items()):
+            lines.append(f"- Rows skipped ({reason.replace('_', ' ')}): `{fmt_int(count)}`")
     lines.extend(["", "## Top Examples", ""])
     for ex in result["top_examples"][:10]:
         lines.append(
@@ -740,7 +951,11 @@ def write_html(path: Path, result: dict[str, Any], input_path: Path) -> None:
     <div class="metric"><div class="label">Avoided ratio on re-reads</div><div class="value">{fmt_pct(s['avoided_token_ratio_on_reread_traffic'])}</div></div>
     <div class="metric"><div class="label">Point tokens avoided</div><div class="value">{fmt_int(s['point_tokens_avoided'])}</div></div>
     <div class="metric"><div class="label">Carried-context tokens avoided</div><div class="value">{fmt_int(s['cumulative_carried_context_tokens_avoided'])}</div></div>
+    <div class="metric"><div class="label">Est. savings (no provider cache)</div><div class="value">${s['estimated_total_dollars_saved_no_provider_cache']:.2f}</div></div>
+    <div class="metric"><div class="label">Est. savings (net of provider cache)</div><div class="value">${s['estimated_total_dollars_saved_net_of_provider_cache']:.2f}</div></div>
   </section>
+  <p class="note">Prices: input ${s['price_input_per_million_tokens']:.2f}/M, cached input ${s['price_cached_input_per_million_tokens']:.2f}/M
+     ({html.escape(s['price_source'])}). The net figure prices carried context at the provider prompt-cache read rate — quote it to teams already using prompt caching.</p>
   <h2>Actions</h2>
   <p><code>LIVE_CALL</code> {fmt_int(result['actions']['LIVE_CALL'])} ·
      <code>DELTA_SERVE</code> {fmt_int(result['actions']['DELTA_SERVE'])} ·
@@ -773,12 +988,38 @@ def main() -> None:
     parser.add_argument("--input", type=Path, required=True, help="JSON or JSONL trace file.")
     parser.add_argument("--out", type=Path, required=True, help="Report output directory.")
     parser.add_argument("--price-input-per-m", type=float, default=0.0, help="Input-token price per 1M tokens.")
+    parser.add_argument(
+        "--price-cached-input-per-m",
+        type=float,
+        default=None,
+        help="Provider prompt-cache READ price per 1M tokens (defaults to model table or 10%% of input).",
+    )
+    parser.add_argument(
+        "--model",
+        default="",
+        help=f"Model name for the built-in price table ({', '.join(sorted(MODEL_PRICES))}).",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        choices=("auto", "tiktoken", "bytes"),
+        default="auto",
+        help="Token estimator: tiktoken o200k_base when available (auto), or bytes/4.",
+    )
     args = parser.parse_args()
 
-    events, malformed = load_events_verbose(args.input)
-    result = analyze(events, args.price_input_per_m)
-    if malformed:
-        result["input_quality"] = {"malformed_lines_skipped": len(malformed), "examples": malformed[:5]}
+    configure_tokenizer(args.tokenizer)
+    events, malformed, skip_stats = load_events_with_stats(args.input)
+    result = analyze(
+        events,
+        args.price_input_per_m,
+        price_cached_input_per_m=args.price_cached_input_per_m,
+        model=args.model,
+    )
+    result["input_quality"] = {
+        "malformed_lines_skipped": len(malformed),
+        "examples": malformed[:5],
+        "rows_skipped": skip_stats,
+    }
 
     args.out.mkdir(parents=True, exist_ok=True)
     write_json(args.out / "summary.json", result)

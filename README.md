@@ -29,6 +29,12 @@ Blind caching is unsafe because the target, auth context, session, workspace, or
 pip install cairn-security-agent-audit
 ```
 
+With exact tokenization (tiktoken) instead of the bytes/4 proxy:
+
+```bash
+pip install 'cairn-security-agent-audit[tokens]'
+```
+
 From source:
 
 ```bash
@@ -73,8 +79,13 @@ JSONL trace:
 cairn-audit \
   --input your_trace.jsonl \
   --out report \
-  --price-input-per-m 3.0
+  --model claude-sonnet-4.5
 ```
+
+`--model` resolves input and cached-input prices from a built-in table
+(override with `--price-input-per-m` / `--price-cached-input-per-m`; verify
+prices against the provider pricing page before quoting anyone).
+`--tokenizer tiktoken` uses exact o200k_base token counts when installed.
 
 Directory of JSON logs:
 
@@ -174,11 +185,22 @@ Example summary fields:
   "exact_cache_opportunities": 3,
   "delta_serve_opportunities": 1,
   "exact_cache_stale_risk_events": 1,
+  "provenance_decidable_rereads": 3,
+  "false_hits": 0,
+  "provenance_exact_cache_false_hit_rate": 0.0,
   "point_tokens_avoided": 346,
   "cumulative_carried_context_tokens_avoided": 954,
-  "stale_serves": 0
+  "estimated_total_dollars_saved_no_provider_cache": 0.0039,
+  "estimated_total_dollars_saved_net_of_provider_cache": 0.0013
 }
 ```
+
+The false-hit rate is measured, not assumed: whenever protected provenance
+matched but the output hash changed, a naive provenance-only cache would have
+served a stale result. CAIRN counts it, reports it, and refuses to exact-cache.
+Two dollar figures are reported: the upper bound (no provider prompt caching)
+and a conservative floor that prices carried context at the provider
+prompt-cache read rate.
 
 ## Action Policy
 
@@ -189,22 +211,37 @@ uncertain or first-seen work           -> LIVE_CALL
 unsafe protected-state mismatch        -> BLOCK_REUSE
 ```
 
-## Public Reference Result
+## Public Reference Results
 
-AutoPenBench / genai-pentest-paper public logs:
+Measured with this engine (v0.2.0, bytes/4 estimator) on public traces.
+
+AutoPenBench / genai-pentest-paper security-agent logs:
 
 ```text
-2,764 tool events audited
-1,031 re-reads
-37.30% repeated work
-548,335 point tokens avoided
-3,698,589 carried-context tokens avoided
-1,016 protected-lane blocks
-0 stale serves
-0 false hits
+2,881 tool events audited
+834 re-reads (28.95% repeated work)
+87.01% avoided-token ratio on re-read traffic
+822 protected-lane blocks (stale replay risk caught)
+false-hit rate: 1 of 12 provenance-matched re-reads (8.33%)
 ```
 
-Read this as an offline audit-policy result, not a production-serving claim.
+Coding-agent corpora (Kwai SWE-smith 66k + NVIDIA SWE-Hero OpenHands,
+4.15M tool commands, 97k sessions):
+
+```text
+437,013 re-reads
+50,632 certified exact-cache hits (provenance AND output hash matched)
+294,824 protected-lane blocks
+false-hit rate: 64.39% of provenance-matched re-reads had CHANGED output
+  (Kwai 70.86%, NVIDIA 10.47%)
+88.9M point tokens avoided; 2.15B carried-context tokens avoided (upper bound)
+```
+
+The false-hit result is the headline: on real agent traces, a cache keyed on
+anything short of output identity would silently serve stale results most of
+the time. That is why CAIRN certifies reuse instead of assuming it.
+
+Read these as offline audit-policy results, not production-serving claims.
 
 ## Open-Core Boundary
 

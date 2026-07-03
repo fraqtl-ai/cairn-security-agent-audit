@@ -37,10 +37,10 @@ def write_normalized_trace(records: list[dict], path: Path, keep_output_text: bo
             f.write(json.dumps(row, sort_keys=True) + "\n")
 
 
-def events_from_records(records: list[dict]) -> list[audit.Event]:
+def events_from_records(records: list[dict], skip_stats: dict[str, int] | None = None) -> list[audit.Event]:
     events: list[audit.Event] = []
     for idx, record in enumerate(records):
-        event = audit.normalize_row(record, idx, "cleaned_trace")
+        event = audit.normalize_row(record, idx, "cleaned_trace", skip_stats)
         if event is not None:
             events.append(event)
     return events
@@ -56,6 +56,23 @@ def main() -> None:
     parser.add_argument("--max-records", type=int, default=0)
     parser.add_argument("--readonly-cache-only", action="store_true")
     parser.add_argument("--price-input-per-m", type=float, default=0.0)
+    parser.add_argument(
+        "--price-cached-input-per-m",
+        type=float,
+        default=None,
+        help="Provider prompt-cache READ price per 1M tokens (defaults to model table or 10%% of input).",
+    )
+    parser.add_argument(
+        "--model",
+        default="",
+        help="Model name for the built-in price table (see cairn_audit_agent_logs.MODEL_PRICES).",
+    )
+    parser.add_argument(
+        "--tokenizer",
+        choices=("auto", "tiktoken", "bytes"),
+        default="auto",
+        help="Token estimator: tiktoken o200k_base when available (auto), or bytes/4.",
+    )
     parser.add_argument(
         "--drop-output-text",
         action="store_true",
@@ -95,13 +112,21 @@ def main() -> None:
     else:
         out_dir = args.out or Path("report")
         out_dir.mkdir(parents=True, exist_ok=True)
+    audit.configure_tokenizer(args.tokenizer)
     normalized_path = (out_dir / "cleaned_trace.jsonl") if out_dir else Path("cleaned_trace.jsonl")
+    skip_stats: dict[str, int] = {}
     if args.no_cleaned_trace:
-        events = events_from_records(records)
+        events = events_from_records(records, skip_stats)
     else:
         write_normalized_trace(records, normalized_path, keep_output_text=not args.drop_output_text)
-        events = audit.load_events(normalized_path)
-    result = audit.analyze(events, args.price_input_per_m)
+        events, _malformed, skip_stats = audit.load_events_with_stats(normalized_path)
+    result = audit.analyze(
+        events,
+        args.price_input_per_m,
+        price_cached_input_per_m=args.price_cached_input_per_m,
+        model=args.model,
+    )
+    result["input_quality"] = {"malformed_lines_skipped": 0, "rows_skipped": skip_stats}
     result["normalization"] = {
         **ingest_stats,
         "cleaned_trace": "" if args.no_cleaned_trace else str(normalized_path),
