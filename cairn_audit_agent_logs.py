@@ -899,84 +899,211 @@ def write_markdown(path: Path, result: dict[str, Any], input_path: Path) -> None
 
 
 def write_html(path: Path, result: dict[str, Any], input_path: Path) -> None:
+    """Console-grade local dashboard. Self-contained: system fonts, no JS, no network."""
     s = result["summary"]
-    family_rows = "\n".join(
+    actions = result["actions"]
+    price_in = s["price_input_per_million_tokens"]
+    price_cached = s["price_cached_input_per_million_tokens"]
+
+    def esc(v: Any) -> str:
+        return html.escape(str(v))
+
+    def user_dollars(row: dict[str, Any]) -> float:
+        return money(row["point_tokens_avoided"], price_in) + money(
+            row["cumulative_carried_context_tokens_avoided"], price_cached
+        )
+
+    re_reads = s["re_reads"]
+    seg = {k: actions.get(k, 0) for k in ("EXACT_CACHE", "DELTA_SERVE", "BLOCK_REUSE")}
+    seg_total = sum(seg.values())
+
+    def flexval(n: int) -> str:
+        return f"{max(n, seg_total * 0.04):.2f}" if seg_total else "1"
+
+    fhr = s["provenance_exact_cache_false_hit_rate"]
+    fh_color = "var(--teal)" if s["false_hits"] == 0 and s["provenance_decidable_rereads"] > 0 else (
+        "var(--pink)" if s["false_hits"] else "var(--dim)")
+
+    kpis = [
+        ("tool calls audited", fmt_int(s["events"]), f"{fmt_int(s['sessions'])} sessions", "var(--text)"),
+        ("re-reads of prior work", fmt_int(re_reads), f"{s['repeated_work_percent']:.1f}% of events", "var(--text)"),
+        ("certified exact-cache", fmt_int(s["exact_cache_opportunities"]), "provenance + output identity", "var(--teal)"),
+        ("false-hit rate", fmt_pct(fhr), f"{fmt_int(s['false_hits'])} of {fmt_int(s['provenance_decidable_rereads'])} decidable", fh_color),
+        ("saved · net of provider cache", f"${s['estimated_total_dollars_saved_net_of_provider_cache']:,.2f}",
+         f"${s['estimated_total_dollars_saved_no_provider_cache']:,.2f} upper bound", "var(--gold)"),
+        ("tokens avoidable", fmt_int(s["point_tokens_avoided"]),
+         f"{fmt_int(s['cumulative_carried_context_tokens_avoided'])} carried (upper bound)", "var(--text)"),
+    ]
+    kpi_html = "\n".join(
+        f'<div class="kpi"><div class="lab">{esc(lab)}</div>'
+        f'<div class="val" style="color:{color}">{esc(val)}</div>'
+        f'<div class="sub">{esc(sub)}</div></div>'
+        for lab, val, sub, color in kpis
+    )
+
+    if seg_total:
+        funnel_html = (
+            f'<div class="funnel">'
+            f'<div class="f-cert" style="flex:{flexval(seg["EXACT_CACHE"])}">CERTIFIED {fmt_int(seg["EXACT_CACHE"])}</div>'
+            f'<div class="f-delta" style="flex:{flexval(seg["DELTA_SERVE"])}">DELTA {fmt_int(seg["DELTA_SERVE"])}</div>'
+            f'<div class="f-block" style="flex:{flexval(seg["BLOCK_REUSE"])}">BLOCKED {fmt_int(seg["BLOCK_REUSE"])}</div>'
+            f"</div>"
+            f'<p class="cap">Of {fmt_int(re_reads)} re-reads: certified exact reuse · changed output served as a diff · '
+            f"unprovable or stale-risk, re-run live. The blocked share is what a naive cache would have served stale.</p>"
+        )
+    else:
+        funnel_html = '<p class="cap">No repeated work detected on this trace yet — audit a larger day/week of traces.</p>'
+
+    users = [u for u in result.get("top_users", []) if u["user_id"] != "(unattributed)"]
+    users_html = ""
+    if users:
+        rows = "\n".join(
+            "<tr>"
+            f"<td>{esc(u['user_id'])}</td><td>{fmt_int(u['events'])}</td><td>{fmt_int(u['re_reads'])}</td>"
+            f"<td>{fmt_int(u['point_tokens_avoided'])}</td>"
+            f"<td>{fmt_int(u['cumulative_carried_context_tokens_avoided'])}</td>"
+            f'<td class="money">${user_dollars(u):,.2f}</td>'
+            "</tr>"
+            for u in users[:12]
+        )
+        users_html = (
+            '<section class="panel"><h2>Spend by user</h2><div class="tw"><table>'
+            "<thead><tr><th>User</th><th>Events</th><th>Re-reads</th><th>Point avoided</th>"
+            "<th>Carried avoided</th><th>Saved (net)</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table></div></section>"
+        )
+
+    fam_rows = "\n".join(
         "<tr>"
-        f"<td>{html.escape(row['family'])}</td>"
-        f"<td>{fmt_int(row['re_reads'])}</td>"
+        f"<td>{esc(row['family'])}</td><td>{fmt_int(row['re_reads'])}</td>"
         f"<td>{fmt_int(row['point_tokens_avoided'])}</td>"
         f"<td>{fmt_int(row['cumulative_carried_context_tokens_avoided'])}</td>"
         f"<td>{fmt_pct(row['avoided_token_ratio_on_rereads'])}</td>"
         "</tr>"
         for row in result["top_repeated_families"][:12]
-    )
-    examples = "\n".join(
-        "<li>"
-        f"<strong>{html.escape(ex['action'])}</strong> "
-        f"{html.escape(ex['family'])}: saved {fmt_int(ex['point_tokens_avoided'])} tokens; "
-        f"violations: {html.escape(', '.join(ex['protected_lane_violations']) or 'none')}; "
-        f"<code>{html.escape(ex['command_text'])}</code>"
-        "</li>"
-        for ex in result["top_examples"][:10]
-    )
+    ) or '<tr><td colspan="5" class="empty">no repeated families yet</td></tr>'
+
+    chip_class = {"EXACT_CACHE": "c-cert", "DELTA_SERVE": "c-delta", "BLOCK_REUSE": "c-block", "LIVE_CALL": "c-live"}
+    examples_html = "\n".join(
+        f'<div class="ev"><span class="chip {chip_class.get(ex["action"], "c-live")}">{esc(ex["action"].replace("_", " "))}</span>'
+        f"<code>{esc(ex['command_text'][:110])}</code>"
+        f'<span class="amt">−{fmt_int(ex["point_tokens_avoided"])} tok</span></div>'
+        for ex in result["top_examples"][:8]
+    ) or '<p class="cap">no reuse examples on this trace yet</p>'
+
+    quality = result.get("input_quality") or {}
+    skipped = quality.get("rows_skipped") or {}
+    quality_bits = [f"malformed lines skipped: {fmt_int(quality.get('malformed_lines_skipped', 0))}"] + [
+        f"{k.replace('_', ' ')}: {fmt_int(v)}" for k, v in sorted(skipped.items())
+    ]
+    caveats_html = "\n".join(f"<li>{esc(c)}</li>" for c in result.get("caveats", []))
+    generated = time.strftime("%Y-%m-%d %H:%M", time.localtime(result.get("generated_at_unix", time.time())))
+
     html_text = f"""<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CAIRN Agent Log Audit</title>
-  <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; }}
-    main {{ max-width: 1040px; margin: 0 auto; }}
-    h1, h2 {{ letter-spacing: 0; }}
-    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }}
-    .metric {{ border: 1px solid #d8dee4; border-radius: 8px; padding: 14px; }}
-    .label {{ color: #57606a; font-size: 13px; }}
-    .value {{ font-size: 24px; font-weight: 700; margin-top: 4px; }}
-    table {{ border-collapse: collapse; width: 100%; margin-top: 12px; }}
-    th, td {{ border-bottom: 1px solid #d8dee4; padding: 8px; text-align: right; }}
-    th:first-child, td:first-child {{ text-align: left; }}
-    code {{ background: #f6f8fa; padding: 2px 4px; border-radius: 4px; }}
-    .note {{ background: #f6f8fa; border-left: 4px solid #57606a; padding: 12px 14px; }}
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAIRN audit receipt — {esc(Path(str(input_path)).name)}</title>
+<style>
+:root{{--bg:#05070d;--bg2:#090c15;--bg3:#0d1120;--purple:#8b7fff;--purple-bright:#c4b8ff;
+--text:#dde2ef;--dim:#6b7490;--border:#161c2e;--border2:#1e2740;
+--teal:#4ecda4;--pink:#ff6b8a;--gold:#ffa726;
+--mono:"SF Mono",Menlo,Consolas,monospace;--sans:"Avenir Next",Avenir,"Segoe UI",system-ui,sans-serif}}
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;padding:34px 20px 60px}}
+.wrap{{max-width:1080px;margin:0 auto}}
+header{{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}}
+.stones{{display:flex;flex-direction:column;align-items:center;gap:2px}}
+.stones i{{display:block;border-radius:999px;background:linear-gradient(180deg,var(--purple-bright),var(--purple))}}
+.stones .t{{width:10px;height:4px}}.stones .m{{width:16px;height:5px}}.stones .b{{width:22px;height:5px}}
+h1{{font-size:19px;font-weight:600;letter-spacing:.08em}}
+h1 small{{color:var(--dim);font-weight:400;letter-spacing:0;margin-left:8px;font-size:13px}}
+.meta{{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right;line-height:1.7}}
+.src{{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-bottom:22px;word-break:break-all}}
+.kpis{{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}}
+.kpi{{background:var(--bg3);border:1px solid var(--border2);border-radius:7px;padding:13px 15px}}
+.kpi .lab{{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}}
+.kpi .val{{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:21px;margin-top:6px}}
+.kpi .sub{{font-size:11px;color:var(--dim);margin-top:3px}}
+.panel{{background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:17px 19px;margin-bottom:14px}}
+h2{{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:12px}}
+.funnel{{display:flex;height:32px;border-radius:5px;overflow:hidden;gap:2px;font-family:var(--mono);font-size:10.5px}}
+.funnel div{{display:flex;align-items:center;justify-content:center;min-width:0;overflow:hidden;white-space:nowrap;border-radius:2px}}
+.f-cert{{background:rgba(78,205,164,.25);color:#9fe6cb}}
+.f-delta{{background:rgba(255,167,38,.18);color:#ffcb7d}}
+.f-block{{background:rgba(255,107,138,.18);color:#ff9aac}}
+.cap{{font-size:12px;color:var(--dim);margin-top:10px}}
+.note{{border-left:3px solid var(--purple);background:var(--bg3);padding:11px 14px;border-radius:0 5px 5px 0;font-size:13.5px}}
+.note.warn{{border-left-color:var(--pink)}}
+.note.ok{{border-left-color:var(--teal)}}
+.cols{{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+@media(max-width:900px){{.cols{{grid-template-columns:1fr}}}}
+.tw{{overflow-x:auto}}
+table{{width:100%;border-collapse:collapse;font-size:12.5px;min-width:460px}}
+th{{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);text-align:right;padding:7px 9px;border-bottom:1px solid var(--border2);font-weight:600}}
+td{{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;padding:7px 9px;border-bottom:1px solid var(--border);color:var(--text)}}
+th:first-child,td:first-child{{text-align:left}}
+td:first-child{{font-family:var(--sans)}}
+tr:last-child td{{border-bottom:none}}
+td.money{{color:var(--teal)}}
+td.empty{{color:var(--dim);text-align:center}}
+.ev{{display:flex;gap:10px;align-items:baseline;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;margin-bottom:7px;font-size:12px}}
+.chip{{flex:none;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:3px 8px;border-radius:3px}}
+.c-cert{{background:rgba(78,205,164,.12);color:var(--teal)}}
+.c-delta{{background:rgba(255,167,38,.12);color:var(--gold)}}
+.c-block{{background:rgba(255,107,138,.12);color:var(--pink)}}
+.c-live{{background:rgba(139,127,255,.12);color:var(--purple-bright)}}
+.ev code{{font-family:var(--mono);font-size:11.5px;color:#aeb8cc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}}
+.ev .amt{{margin-left:auto;flex:none;font-family:var(--mono);color:var(--dim);font-size:11px}}
+.fine{{font-size:11.5px;color:var(--dim);line-height:1.7}}
+.fine ul{{margin:8px 0 0 18px}}
+footer{{margin-top:20px;font-family:var(--mono);font-size:10.5px;color:var(--dim);display:flex;gap:16px;flex-wrap:wrap}}
+</style>
 </head>
 <body>
-<main>
-  <h1>CAIRN Agent Log Audit</h1>
-  <p>Input: <code>{html.escape(str(input_path))}</code></p>
-  <section class="grid">
-    <div class="metric"><div class="label">Events</div><div class="value">{fmt_int(s['events'])}</div></div>
-    <div class="metric"><div class="label">Re-reads</div><div class="value">{fmt_int(s['re_reads'])}</div></div>
-    <div class="metric"><div class="label">Repeated work</div><div class="value">{s['repeated_work_percent']:.2f}%</div></div>
-    <div class="metric"><div class="label">Avoided ratio on re-reads</div><div class="value">{fmt_pct(s['avoided_token_ratio_on_reread_traffic'])}</div></div>
-    <div class="metric"><div class="label">Point tokens avoided</div><div class="value">{fmt_int(s['point_tokens_avoided'])}</div></div>
-    <div class="metric"><div class="label">Carried-context tokens avoided</div><div class="value">{fmt_int(s['cumulative_carried_context_tokens_avoided'])}</div></div>
-    <div class="metric"><div class="label">Est. savings (no provider cache)</div><div class="value">${s['estimated_total_dollars_saved_no_provider_cache']:.2f}</div></div>
-    <div class="metric"><div class="label">Est. savings (net of provider cache)</div><div class="value">${s['estimated_total_dollars_saved_net_of_provider_cache']:.2f}</div></div>
+<div class="wrap">
+  <header>
+    <span class="stones" aria-hidden="true"><i class="t"></i><i class="m"></i><i class="b"></i></span>
+    <h1>CAIRN<small>audit receipt · a fraQtl product</small></h1>
+    <div class="meta">generated {esc(generated)}<br>read-only · local-only</div>
+  </header>
+  <div class="src">input: {esc(input_path)}</div>
+
+  <section class="kpis">{kpi_html}</section>
+
+  <section class="panel"><h2>Certification funnel — repeated work</h2>{funnel_html}</section>
+
+  <section class="panel"><h2>Safety</h2>
+    <div class="note {'ok' if s['false_hits'] == 0 and s['provenance_decidable_rereads'] > 0 else ('warn' if s['false_hits'] else '')}">{esc(s['provenance_safety_note'])}</div>
+    <p class="cap">Protected-lane blocks (provenance drift caught): {fmt_int(s['protected_lane_blocks'])} ·
+    identical re-reads: {fmt_int(s['identical_rereads'])} ·
+    stale-risk events: {fmt_int(s['exact_cache_stale_risk_events'])}</p>
   </section>
-  <p class="note">Prices: input ${s['price_input_per_million_tokens']:.2f}/M, cached input ${s['price_cached_input_per_million_tokens']:.2f}/M
-     ({html.escape(s['price_source'])}). The net figure prices carried context at the provider prompt-cache read rate — quote it to teams already using prompt caching.</p>
-  <h2>Actions</h2>
-  <p><code>LIVE_CALL</code> {fmt_int(result['actions']['LIVE_CALL'])} ·
-     <code>DELTA_SERVE</code> {fmt_int(result['actions']['DELTA_SERVE'])} ·
-     <code>EXACT_CACHE</code> {fmt_int(result['actions']['EXACT_CACHE'])} ·
-     <code>BLOCK_REUSE</code> {fmt_int(result['actions']['BLOCK_REUSE'])}</p>
-  <h2>Safety</h2>
-  <p>Protected-lane blocks (provenance change caught): <strong>{fmt_int(s['protected_lane_blocks'])}</strong>.
-     Exact-cache stale-risk events: <strong>{fmt_int(s['exact_cache_stale_risk_events'])}</strong>.
-     Exact-cache false-hits (provenance matched, output changed): <strong>{fmt_int(s['false_hits'])}</strong>
-     ({fmt_pct(s['provenance_exact_cache_false_hit_rate'])}).</p>
-  <p class="note">{html.escape(s['provenance_safety_note'])}</p>
-  <h2>Top Repeated Families</h2>
-  <table>
-    <thead><tr><th>Family</th><th>Re-reads</th><th>Point avoided</th><th>Carried avoided</th><th>Avoided ratio</th></tr></thead>
-    <tbody>{family_rows}</tbody>
-  </table>
-  <h2>Examples</h2>
-  <ul>{examples}</ul>
-  <h2>Recommended Next Action</h2>
-  <p class="note">{html.escape(s['recommended_next_action'])}</p>
-</main>
+
+  {users_html}
+
+  <div class="cols">
+    <section class="panel"><h2>Top repeated tool families</h2><div class="tw"><table>
+      <thead><tr><th>Family</th><th>Re-reads</th><th>Point avoided</th><th>Carried avoided</th><th>Avoided ratio</th></tr></thead>
+      <tbody>{fam_rows}</tbody></table></div></section>
+    <section class="panel"><h2>Reuse decisions — examples</h2>{examples_html}</section>
+  </div>
+
+  <section class="panel"><h2>Recommended next action</h2>
+    <div class="note">{esc(s['recommended_next_action'])}</div>
+    <p class="cap">Prices: input ${price_in:,.2f}/M · cached input ${price_cached:,.2f}/M ({esc(s['price_source'])}) ·
+    token estimator: {esc(result.get('token_estimator', 'bytes/4'))}</p>
+  </section>
+
+  <section class="panel fine"><h2>Method &amp; caveats</h2>
+    <div>{esc(' · '.join(quality_bits))}</div>
+    <ul>{caveats_html}</ul>
+  </section>
+
+  <footer><span>schema {esc(result.get('schema', ''))}</span><span>CAIRN is a fraQtl product</span>
+  <span>github.com/fraqtl-ai/cairn-security-agent-audit</span></footer>
+</div>
 </body>
 </html>
 """
