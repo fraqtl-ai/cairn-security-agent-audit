@@ -353,6 +353,54 @@ def test_shadow_record_never_raises_on_garbage():
         assert list(Path(d).glob("*.jsonl")) == []
 
 
+def test_team_report_merges_devs_without_session_collisions():
+    """Two devs with identical session ids and identical commands must NOT be
+    merged into one session: labels namespace users AND sessions."""
+    import cairn_shadow as shadow
+
+    with tempfile.TemporaryDirectory() as d:
+        rows = [
+            {"session_id": "day", "command": "cat a.py", "output": "SAME" * 50, "ts": 1},
+            {"session_id": "day", "command": "cat a.py", "output": "SAME" * 50, "ts": 2},
+        ]
+        for dev in ("alice", "bob"):
+            with (Path(d) / f"{dev}.jsonl").open("w", encoding="utf-8") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+        out = Path(d) / "team"
+        rc = shadow.cmd_team_report(
+            [f"alice={d}/alice.jsonl", f"bob={d}/bob.jsonl"],
+            model="", price=3.0, cached=None, out=str(out), open_browser=False,
+        )
+        assert rc == 0
+        res = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+        assert res["summary"]["sessions"] == 2          # one per dev, not merged
+        assert res["summary"]["re_reads"] == 2          # one re-read inside each dev
+        assert res["summary"]["attributed_users"] == 2
+        users = {u["user_id"] for u in res["top_users"]}
+        assert users == {"alice", "bob"}
+        assert (out / "report.html").exists()
+
+
+def test_record_is_engine_agnostic():
+    """Non-Claude payload shapes (OpenHands/LangChain-ish aliases) must record."""
+    import io
+    import cairn_shadow as shadow
+
+    with tempfile.TemporaryDirectory() as d:
+        shadow.SHADOW_DIR = Path(d)
+        payload = {"run_id": "r1", "action": "run_shell", "arguments": {"command": "ls"},
+                   "observation": "file_a\nfile_b", "workspace": "/w", "user": "chen"}
+        sys.stdin = io.StringIO(json.dumps(payload))
+        assert shadow.cmd_record() == 0
+        sys.stdin = sys.__stdin__
+        row = json.loads(next(iter(sorted(Path(d).glob("*.jsonl")))).read_text().strip())
+        assert row["session_id"] == "r1"
+        assert row["tool_name"] == "run_shell"
+        assert row["user_id"] == "chen"
+        assert "file_a" in row["output"]
+
+
 # --- standalone runner (no pytest needed) ---------------------------------------
 
 def _main() -> int:
