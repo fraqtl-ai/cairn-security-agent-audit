@@ -36,6 +36,7 @@ Issues = "https://github.com/fraqtl-ai/cairn-security-agent-audit/issues"
 cairn-audit = "cairn_pilot_from_raw_logs:main"
 cairn-inspect = "cairn_inspect_log_schema:main"
 cairn-demo = "cairn_demo:main"
+cairn-shadow = "cairn_shadow:main"
 
 [tool.setuptools]
 py-modules = [
@@ -43,7 +44,8 @@ py-modules = [
   "cairn_inspect_log_schema",
   "cairn_pilot_from_raw_logs",
   "cairn_security_audit_ui",
-  "cairn_demo"
+  "cairn_demo",
+  "cairn_shadow"
 ]
 packages = ["pilot", "cairn_security_agent_audit", "cairn_security_agent_audit.samples"]
 

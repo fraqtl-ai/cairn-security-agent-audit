@@ -71,6 +71,30 @@ Optional HTML:
 cairn-demo --html
 ```
 
+## Shadow Mode: Audit Your Own Coding Agent (new)
+
+CAIRN can record your own agent's tool calls (read-only, local-only) and hand
+you a certified-reuse receipt for your real sessions. For Claude Code:
+
+```bash
+cairn-shadow install --write   # adds a PostToolUse hook (backs up settings.json)
+# ...use Claude Code normally for a day...
+cairn-shadow report --model claude-sonnet-4.5
+```
+
+Example receipt:
+
+```text
+CAIRN shadow receipt — 1 day(s), 6 tool calls
+  re-reads: 3 (50.0%)
+  certified exact-cache: 2  |  false hits blocked: 1 (33.3% of decidable)
+  tokens avoidable: 1,346 point / 2,900 carried (upper bound)
+```
+
+Nothing is served or modified: shadow mode only measures what certified
+recycling would have saved you, and what a naive cache would have gotten wrong.
+Recording stays on your machine (`~/.cairn/shadow/`).
+
 ## Audit Your Own Logs
 
 JSONL trace:

@@ -310,6 +310,49 @@ def test_tokenizer_tiktoken_when_available():
         audit.configure_tokenizer("bytes")
 
 
+# --- shadow mode (Claude Code hook adapter) ---------------------------------------
+
+def test_shadow_record_and_report_roundtrip():
+    """A hook event recorded by cairn-shadow must normalize into an auditable event."""
+    import io
+    import cairn_shadow as shadow
+
+    with tempfile.TemporaryDirectory() as d:
+        shadow.SHADOW_DIR = Path(d)
+        hook_event = {
+            "session_id": "sess-1",
+            "cwd": "/repo",
+            "tool_name": "Bash",
+            "tool_input": {"command": "cat README.md"},
+            "tool_response": {"stdout": "hello world", "exit_code": 0},
+        }
+        for _ in range(2):  # same call twice -> one certified exact-cache re-read
+            sys.stdin = io.StringIO(json.dumps(hook_event))
+            assert shadow.cmd_record() == 0
+        sys.stdin = sys.__stdin__
+        files = sorted(Path(d).glob("*.jsonl"))
+        assert len(files) == 1
+        events, malformed, _ = audit.load_events_with_stats(files[0])
+        assert malformed == []
+        assert len(events) == 2
+        res = audit.analyze(events)
+        assert res["summary"]["re_reads"] == 1
+        assert res["summary"]["exact_cache_opportunities"] == 1
+        assert res["summary"]["false_hits"] == 0
+
+
+def test_shadow_record_never_raises_on_garbage():
+    import io
+    import cairn_shadow as shadow
+
+    with tempfile.TemporaryDirectory() as d:
+        shadow.SHADOW_DIR = Path(d)
+        sys.stdin = io.StringIO("not json at all")
+        assert shadow.cmd_record() == 0  # must never break the agent
+        sys.stdin = sys.__stdin__
+        assert list(Path(d).glob("*.jsonl")) == []
+
+
 # --- standalone runner (no pytest needed) ---------------------------------------
 
 def _main() -> int:
