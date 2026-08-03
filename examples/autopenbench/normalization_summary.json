@@ -1,0 +1,10 @@
+{
+  "cleaned_trace": "",
+  "cleaned_trace_written": false,
+  "input_objects": 116,
+  "output_text_retained": true,
+  "records": 2881,
+  "sources": {
+    "pentest_steps": 2881
+  }
+}

@@ -1,74 +1,131 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CAIRN Agent Log Audit</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; }
-    main { max-width: 1040px; margin: 0 auto; }
-    h1, h2 { letter-spacing: 0; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
-    .metric { border: 1px solid #d8dee4; border-radius: 8px; padding: 14px; }
-    .label { color: #57606a; font-size: 13px; }
-    .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
-    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
-    th, td { border-bottom: 1px solid #d8dee4; padding: 8px; text-align: right; }
-    th:first-child, td:first-child { text-align: left; }
-    code { background: #f6f8fa; padding: 2px 4px; border-radius: 4px; }
-    .note { background: #f6f8fa; border-left: 4px solid #57606a; padding: 12px 14px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CAIRN audit receipt — experiments</title>
+<style>
+:root{--bg:#05070d;--bg2:#090c15;--bg3:#0d1120;--purple:#8b7fff;--purple-bright:#c4b8ff;
+--text:#dde2ef;--dim:#6b7490;--border:#161c2e;--border2:#1e2740;
+--teal:#4ecda4;--pink:#ff6b8a;--gold:#ffa726;
+--mono:"SF Mono",Menlo,Consolas,monospace;--sans:"Avenir Next",Avenir,"Segoe UI",system-ui,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;padding:34px 20px 60px}
+.wrap{max-width:1080px;margin:0 auto}
+header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:8px}
+.stones{display:flex;flex-direction:column;align-items:center;gap:2px}
+.stones i{display:block;border-radius:999px;background:linear-gradient(180deg,var(--purple-bright),var(--purple))}
+.stones .t{width:10px;height:4px}.stones .m{width:16px;height:5px}.stones .b{width:22px;height:5px}
+h1{font-size:19px;font-weight:600;letter-spacing:.08em}
+h1 small{color:var(--dim);font-weight:400;letter-spacing:0;margin-left:8px;font-size:13px}
+.meta{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--dim);text-align:right;line-height:1.7}
+.src{font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-bottom:22px;word-break:break-all}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--bg3);border:1px solid var(--border2);border-radius:7px;padding:13px 15px}
+.kpi .lab{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--dim)}
+.kpi .val{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:21px;margin-top:6px}
+.kpi .sub{font-size:11px;color:var(--dim);margin-top:3px}
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:7px;padding:17px 19px;margin-bottom:14px}
+h2{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);font-weight:600;margin-bottom:12px}
+.funnel{display:flex;height:32px;border-radius:5px;overflow:hidden;gap:2px;font-family:var(--mono);font-size:10.5px}
+.funnel div{display:flex;align-items:center;justify-content:center;min-width:0;overflow:hidden;white-space:nowrap;border-radius:2px}
+.f-cert{background:rgba(78,205,164,.25);color:#9fe6cb}
+.f-delta{background:rgba(255,167,38,.18);color:#ffcb7d}
+.f-block{background:rgba(255,107,138,.18);color:#ff9aac}
+.cap{font-size:12px;color:var(--dim);margin-top:10px}
+.note{border-left:3px solid var(--purple);background:var(--bg3);padding:11px 14px;border-radius:0 5px 5px 0;font-size:13.5px}
+.note.warn{border-left-color:var(--pink)}
+.note.ok{border-left-color:var(--teal)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.cols{grid-template-columns:1fr}}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:460px}
+th{font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--dim);text-align:right;padding:7px 9px;border-bottom:1px solid var(--border2);font-weight:600}
+td{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;padding:7px 9px;border-bottom:1px solid var(--border);color:var(--text)}
+th:first-child,td:first-child{text-align:left}
+td:first-child{font-family:var(--sans)}
+tr:last-child td{border-bottom:none}
+td.money{color:var(--teal)}
+td.empty{color:var(--dim);text-align:center}
+.ev{display:flex;gap:10px;align-items:baseline;padding:8px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:5px;margin-bottom:7px;font-size:12px}
+.chip{flex:none;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;padding:3px 8px;border-radius:3px}
+.c-cert{background:rgba(78,205,164,.12);color:var(--teal)}
+.c-delta{background:rgba(255,167,38,.12);color:var(--gold)}
+.c-block{background:rgba(255,107,138,.12);color:var(--pink)}
+.c-live{background:rgba(139,127,255,.12);color:var(--purple-bright)}
+.ev code{font-family:var(--mono);font-size:11.5px;color:#aeb8cc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ev .amt{margin-left:auto;flex:none;font-family:var(--mono);color:var(--dim);font-size:11px}
+.fine{font-size:11.5px;color:var(--dim);line-height:1.7}
+.fine ul{margin:8px 0 0 18px}
+footer{margin-top:20px;font-family:var(--mono);font-size:10.5px;color:var(--dim);display:flex;gap:16px;flex-wrap:wrap}
+</style>
 </head>
 <body>
-<main>
-  <h1>CAIRN Agent Log Audit</h1>
-  <p>Input: <code>data/genai-pentest-paper/logs/experiments</code></p>
-  <section class="grid">
-    <div class="metric"><div class="label">Events</div><div class="value">2,764</div></div>
-    <div class="metric"><div class="label">Re-reads</div><div class="value">1,031</div></div>
-    <div class="metric"><div class="label">Repeated work</div><div class="value">37.30%</div></div>
-    <div class="metric"><div class="label">Avoided ratio on re-reads</div><div class="value">81.08%</div></div>
-    <div class="metric"><div class="label">Point tokens avoided</div><div class="value">548,335</div></div>
-    <div class="metric"><div class="label">Carried-context tokens avoided</div><div class="value">3,698,589</div></div>
+<div class="wrap">
+  <header>
+    <span class="stones" aria-hidden="true"><i class="t"></i><i class="m"></i><i class="b"></i></span>
+    <h1>CAIRN<small>audit receipt · a fraQtl product</small></h1>
+    <div class="meta">generated 2026-07-31 13:37<br>read-only · local-only</div>
+  </header>
+  <div class="src">input: /Users/samuelsalfati/Documents/Projects/Cairn/data/genai-pentest-paper/logs/experiments</div>
+
+  <section class="kpis"><div class="kpi"><div class="lab">tool calls audited</div><div class="val" style="color:var(--text)">2,881</div><div class="sub">116 sessions</div></div>
+<div class="kpi"><div class="lab">re-reads of prior work</div><div class="val" style="color:var(--text)">834</div><div class="sub">28.9% of events</div></div>
+<div class="kpi"><div class="lab">certified exact-cache</div><div class="val" style="color:var(--teal)">11</div><div class="sub">provenance + output identity</div></div>
+<div class="kpi"><div class="lab">false-hit rate</div><div class="val" style="color:var(--pink)">8.33%</div><div class="sub">1 of 12 decidable</div></div>
+<div class="kpi"><div class="lab">saved · net of provider cache</div><div class="val" style="color:var(--gold)">$2.73</div><div class="sub">$12.57 upper bound</div></div>
+<div class="kpi"><div class="lab">tokens avoidable</div><div class="val" style="color:var(--text)">544,122</div><div class="sub">3,645,608 carried (upper bound)</div></div></section>
+
+  <section class="panel"><h2>Certification funnel — repeated work</h2><div class="funnel"><div class="f-cert" style="flex:33.36">CERTIFIED 11</div><div class="f-delta" style="flex:823.00">DELTA 823</div><div class="f-block" style="flex:33.36">BLOCKED 0</div></div><p class="cap">Of 834 re-reads: certified exact reuse · changed output served as a diff · unprovable or stale-risk, re-run live. The blocked share is what a naive cache would have served stale.</p></section>
+
+  <section class="panel"><h2>Safety</h2>
+    <div class="note warn">1 of 12 provenance-matched re-reads had CHANGED output (8.33% false-hit risk): provenance alone is not a safe exact-cache key here; delta-serve/verify or strengthen protected fields before exact-cache serving.</div>
+    <p class="cap">Protected-lane blocks (provenance drift caught): 822 ·
+    identical re-reads: 548 ·
+    stale-risk events: 822</p>
   </section>
-  <h2>Actions</h2>
-  <p><code>LIVE_CALL</code> 1,733 ·
-     <code>DELTA_SERVE</code> 1,018 ·
-     <code>EXACT_CACHE</code> 13 ·
-     <code>BLOCK_REUSE</code> 0</p>
-  <h2>Safety</h2>
-  <p>Protected-lane blocks: <strong>1,016</strong>.
-     Exact-cache stale-risk events: <strong>1,016</strong>.
-     Stale serves counted: <strong>0</strong>.</p>
-  <h2>Top Repeated Families</h2>
-  <table>
-    <thead><tr><th>Family</th><th>Re-reads</th><th>Point avoided</th><th>Carried avoided</th><th>Avoided ratio</th></tr></thead>
-    <tbody><tr><td>search</td><td>40</td><td>379,078</td><td>1,305,231</td><td>99.44%</td></tr>
-<tr><td>curl</td><td>137</td><td>35,462</td><td>512,861</td><td>55.79%</td></tr>
-<tr><td>unknown</td><td>142</td><td>18,289</td><td>251,793</td><td>37.62%</td></tr>
-<tr><td>nmap</td><td>52</td><td>10,167</td><td>208,973</td><td>86.44%</td></tr>
-<tr><td>set</td><td>126</td><td>10,154</td><td>201,954</td><td>65.55%</td></tr>
-<tr><td>use</td><td>31</td><td>7,681</td><td>173,623</td><td>80.32%</td></tr>
-<tr><td>python3</td><td>62</td><td>11,310</td><td>155,406</td><td>42.84%</td></tr>
-<tr><td>run</td><td>66</td><td>6,623</td><td>92,589</td><td>45.99%</td></tr>
-<tr><td>msfconsole</td><td>30</td><td>2,846</td><td>83,156</td><td>18.45%</td></tr>
-<tr><td>ssh</td><td>68</td><td>3,037</td><td>78,928</td><td>38.77%</td></tr>
-<tr><td>searchsploit</td><td>7</td><td>2,896</td><td>76,401</td><td>78.82%</td></tr>
-<tr><td>find</td><td>32</td><td>4,605</td><td>75,229</td><td>76.36%</td></tr></tbody>
-  </table>
-  <h2>Examples</h2>
-  <ul><li><strong>DELTA_SERVE</strong> nmap: saved 242 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.0.5 $ nmap -sV 192.168.1.0</code></li>
-<li><strong>DELTA_SERVE</strong> ssh: saved 385 tokens; violations: repo_state, repo_state_fingerprint; <code>ssh student@192.168.1.0:</code></li>
-<li><strong>DELTA_SERVE</strong> sudo: saved 289 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.1.0 $ sudo -l</code></li>
-<li><strong>DELTA_SERVE</strong> cat: saved 384 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.1.0 $ cat /root/flag</code></li>
-<li><strong>DELTA_SERVE</strong> nmap: saved 161 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.0.5 $ nmap -sS -sV 192.168.1.0/24</code></li>
-<li><strong>DELTA_SERVE</strong> hydra: saved 0 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.1</code></li>
-<li><strong>DELTA_SERVE</strong> hydra: saved 244 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.0.5 $ hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.1</code></li>
-<li><strong>DELTA_SERVE</strong> ssh: saved 0 tokens; violations: repo_state, repo_state_fingerprint; <code>ssh student@192.168.1.1:</code></li>
-<li><strong>DELTA_SERVE</strong> ssh: saved 302 tokens; violations: repo_state, repo_state_fingerprint; <code>ssh student@192.168.1.1:</code></li>
-<li><strong>DELTA_SERVE</strong> find: saved 336 tokens; violations: repo_state, repo_state_fingerprint; <code>192.168.1.1 $ find / -type f -perm -o=w 2&gt;/dev/null</code></li></ul>
-  <h2>Recommended Next Action</h2>
-  <p class="note">Run a one-week local pilot with the same audit and prioritize delta-serving integration for top repeated families.</p>
-</main>
+
+  
+
+  <div class="cols">
+    <section class="panel"><h2>Top repeated tool families</h2><div class="tw"><table>
+      <thead><tr><th>Family</th><th>Re-reads</th><th>Point avoided</th><th>Carried avoided</th><th>Avoided ratio</th></tr></thead>
+      <tbody><tr><td>ExecuteBash</td><td>771</td><td>538,002</td><td>3,538,678</td><td>87.14%</td></tr>
+<tr><td>SSHConnect</td><td>41</td><td>3,137</td><td>80,318</td><td>72.94%</td></tr>
+<tr><td>WriteFile</td><td>7</td><td>2,544</td><td>26,235</td><td>95.78%</td></tr>
+<tr><td>FinalAnswer</td><td>14</td><td>377</td><td>377</td><td>42.17%</td></tr>
+<tr><td>str</td><td>1</td><td>62</td><td>0</td><td>79.49%</td></tr></tbody></table></div></section>
+    <section class="panel"><h2>Reuse decisions — examples</h2><div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>machine_ipaddr=&#x27;192.168.0.5&#x27; cmd=&#x27;nmap -sV 192.168.1.0</code><span class="amt">−245 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>ssh_ipaddr=&#x27;192.168.1.0&#x27; ssh_port=22 ssh_username=&#x27;student&#x27; ssh_password=&#x27;password</code><span class="amt">−388 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>machine_ipaddr=&#x27;192.168.1.0&#x27; cmd=&#x27;sudo -l</code><span class="amt">−292 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>machine_ipaddr=&#x27;192.168.1.0&#x27; cmd=&#x27;cat /root/flag</code><span class="amt">−387 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>machine_ipaddr=&#x27;192.168.0.5&#x27; cmd=&#x27;nmap -sS -sV 192.168.1.0/24</code><span class="amt">−164 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>machine_ipaddr=&#x27;192.168.0.5&#x27; cmd=&#x27;hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.1</code><span class="amt">−0 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>machine_ipaddr=&#x27;192.168.0.5&#x27; cmd=&#x27;hydra -l student -P /usr/share/wordlists/rockyou.txt ssh://192.168.1.1</code><span class="amt">−248 tok</span></div>
+<div class="ev"><span class="chip c-delta">DELTA SERVE</span><code>ssh_ipaddr=&#x27;192.168.1.1&#x27; ssh_port=22 ssh_username=&#x27;student&#x27; ssh_password=&#x27;password</code><span class="amt">−306 tok</span></div></section>
+  </div>
+
+  <section class="panel"><h2>Recommended next action</h2>
+    <div class="note">Do not exact-cache on provenance alone yet: some provenance-matched re-reads changed output (see false-hit rate). Delta-serve or strengthen protected fields, then re-audit.</div>
+    <p class="cap">Prices: input $3.00/M · cached input $0.30/M (built-in price table for claude-sonnet-4.5 (verify against provider pricing page)) ·
+    token estimator: explicit output_tokens if present, otherwise bytes/4</p>
+  </section>
+
+  <section class="panel fine"><h2>Method &amp; caveats</h2>
+    <div>malformed lines skipped: 0</div>
+    <ul><li>This is an audit, not auto-serving.</li>
+<li>Dollar savings use the provided input-token price and should be treated as a trace-local estimate.</li>
+<li>Carried-context tokens avoided is an upper-bound model (avoided x remaining events in session), not a measured value.</li>
+<li>Two dollar figures are reported: &#x27;no_provider_cache&#x27; prices everything at the fresh input rate; &#x27;net_of_provider_cache&#x27; prices carried-context tokens at the provider prompt-cache READ rate, because stable-prefix context would mostly have been provider cache hits anyway. Quote the net figure to teams already using provider prompt caching; it is the defensible floor. Note provider caches are prefix-bound and short-TTL: they cannot reuse work across runs, sessions, or users the way certified recycling can.</li>
+<li>Logs without live output text can show exact-cache opportunities, stale risk, and false hits, but never delta-serving savings.</li>
+<li>False-hit rate = how often a provenance-only exact cache would have served a CHANGED output; 0% means provenance is a safe key on this trace.</li>
+<li>Sparse logs (missing cwd/model/user fields) can only overstate caution (more blocks, higher false-hit rate), never overstate savings.</li>
+<li>Protected-lane quality depends on the provenance fields present in the input logs.</li>
+<li>Per-user rows appear when traces carry user_id/user/actor/email fields; otherwise usage is (unattributed).</li></ul>
+  </section>
+
+  <footer><span>schema cairn_agent_log_audit_v0</span><span>CAIRN is a fraQtl product</span>
+  <span>github.com/fraqtl-ai/cairn-security-agent-audit</span></footer>
+</div>
 </body>
 </html>

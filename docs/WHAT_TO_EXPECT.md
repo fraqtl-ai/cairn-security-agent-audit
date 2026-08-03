@@ -85,22 +85,22 @@ large repeated outputs
 clear top tool families
 protected-lane blocks
 DELTA_SERVE opportunities
-0 stale serves
-0 false hits
+a MEASURED false-hit rate (0% is only meaningful when decidable re-reads exist)
 ```
 
-Example from the included public AutoPenBench report:
+Example from the included public AutoPenBench report (engine v0.2.0):
 
 ```text
-2,764 tool events audited
-1,031 re-reads
-37.30% repeated work
-548,335 point tokens avoided
-3,698,589 carried-context tokens avoided
-1,016 protected-lane blocks
-0 stale serves
-0 false hits
+2,881 tool events audited
+834 re-reads (28.95% repeated work)
+87.01% avoided-token ratio on re-read traffic
+822 protected-lane blocks (stale replay risk caught)
+false hits: 1 of 12 provenance-matched re-reads (8.33%)
 ```
+
+Note: earlier versions of this document quoted "0 stale serves / 0 false hits"
+from a pre-0.2.0 engine whose false-hit counter was not yet measured. Those
+numbers are retracted; the figures above are measured by the current engine.
 
 Top repeated families in that public run included:
 

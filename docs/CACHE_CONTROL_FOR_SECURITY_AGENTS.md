@@ -34,17 +34,16 @@ unsafe protected-state mismatch        -> BLOCK_REUSE
 
 The public package ships with a small pentest sample and an AutoPenBench-style example report.
 
-Public reference result from AutoPenBench / genai-pentest-paper logs:
+Public reference result from AutoPenBench / genai-pentest-paper logs
+(measured with engine v0.2.0; supersedes earlier "0 stale / 0 false" figures,
+which came from a pre-0.2.0 engine that did not yet measure false hits):
 
 ```text
-2,764 tool events audited
-1,031 re-reads
-37.30% repeated work
-548,335 point tokens avoided
-3,698,589 carried-context tokens avoided
-1,016 protected-lane blocks
-0 stale serves
-0 false hits
+2,881 tool events audited
+834 re-reads (28.95% repeated work)
+87.01% avoided-token ratio on re-read traffic
+822 protected-lane blocks (stale replay risk caught)
+false hits: 1 of 12 provenance-matched re-reads (8.33%)
 ```
 
 Read this as an audit-policy result: the package reports where exact replay would be stale and counts safe opportunities under the protected-lane policy. It is not a claim that production serving is already integrated.
