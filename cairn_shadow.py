@@ -169,6 +169,15 @@ def cmd_report(day: str | None, model: str, price: float, cached: float | None, 
     return 0
 
 
+def redact_result(result: dict) -> None:
+    """Strip raw command text from a result in place (privacy mode for shared reports)."""
+    for row in result.get("top_repeated_commands", []):
+        row["command_text"] = "[redacted]"
+    for ex in result.get("top_examples", []):
+        ex["command_text"] = "[redacted]"
+    result["redacted"] = True
+
+
 def _collect_inputs(specs: list[str]) -> list[tuple[str, list[Path]]]:
     """Parse NAME=PATH (or bare PATH) specs into (label, trace files) pairs."""
     sources: list[tuple[str, list[Path]]] = []
@@ -197,6 +206,7 @@ def cmd_team_report(
     cached: float | None,
     out: str,
     open_browser: bool,
+    redact: bool = False,
 ) -> int:
     """Merge several devs' shadow traces into one fleet report (per-dev usage and dollars)."""
     sources = _collect_inputs(specs)
@@ -220,6 +230,8 @@ def cmd_team_report(
 
     result = audit.analyze(events, price, price_cached_input_per_m=cached, model=model)
     result["input_quality"] = {"malformed_lines_skipped": malformed, "rows_skipped": skip_stats}
+    if redact:
+        redact_result(result)
     result["team"] = {
         "sources": [{"label": label or "(user_id from trace)", "files": len(files)} for label, files in sources],
         "mode": "one-shot merge (continuous team collection is part of CAIRN Runtime)",
@@ -288,6 +300,8 @@ def main() -> None:
     p_team.add_argument("--price-cached-input-per-m", type=float, default=None)
     p_team.add_argument("--tokenizer", choices=("auto", "tiktoken", "bytes"), default="auto")
     p_team.add_argument("--open", action="store_true", help="open the fleet report in the browser")
+    p_team.add_argument("--redact", action="store_true",
+                        help="strip raw command text from the report (aggregate metrics only; for sharing)")
     args = parser.parse_args()
 
     if args.cmd == "install":
@@ -306,7 +320,7 @@ def main() -> None:
         raise SystemExit(
             cmd_team_report(
                 args.inputs, args.model, args.price_input_per_m,
-                args.price_cached_input_per_m, args.out, args.open,
+                args.price_cached_input_per_m, args.out, args.open, args.redact,
             )
         )
 
