@@ -942,14 +942,24 @@ def write_html(path: Path, result: dict[str, Any], input_path: Path) -> None:
     )
 
     if seg_total:
+        def seg_div(cls: str, label: str, n: int) -> str:
+            if n <= 0:
+                return ""
+            share = n / seg_total
+            text = f"{label} {fmt_int(n)}" if share >= 0.12 else (label if share >= 0.05 else "")
+            return f'<div class="{cls}" style="flex:{flexval(n)}" title="{label} {fmt_int(n)}">{text}</div>'
+
         funnel_html = (
-            f'<div class="funnel">'
-            f'<div class="f-cert" style="flex:{flexval(seg["EXACT_CACHE"])}">CERTIFIED {fmt_int(seg["EXACT_CACHE"])}</div>'
-            f'<div class="f-delta" style="flex:{flexval(seg["DELTA_SERVE"])}">DELTA {fmt_int(seg["DELTA_SERVE"])}</div>'
-            f'<div class="f-block" style="flex:{flexval(seg["BLOCK_REUSE"])}">BLOCKED {fmt_int(seg["BLOCK_REUSE"])}</div>'
-            f"</div>"
-            f'<p class="cap">Of {fmt_int(re_reads)} re-reads: certified exact reuse · changed output served as a diff · '
-            f"unprovable or stale-risk, re-run live. The blocked share is what a naive cache would have served stale.</p>"
+            '<div class="funnel">'
+            + seg_div("f-cert", "CERTIFIED", seg["EXACT_CACHE"])
+            + seg_div("f-delta", "DELTA", seg["DELTA_SERVE"])
+            + seg_div("f-block", "BLOCKED", seg["BLOCK_REUSE"])
+            + "</div>"
+            f'<p class="cap"><span style="color:var(--teal)">CERTIFIED {fmt_int(seg["EXACT_CACHE"])}</span> · '
+            f'<span style="color:var(--gold)">DELTA {fmt_int(seg["DELTA_SERVE"])}</span> · '
+            f'<span style="color:var(--pink)">BLOCKED {fmt_int(seg["BLOCK_REUSE"])}</span> — '
+            f"of {fmt_int(re_reads)} re-reads. Certified is byte-identical reuse; delta serves the change; "
+            f"blocked is what a naive cache would have served stale.</p>"
         )
     else:
         funnel_html = '<p class="cap">No repeated work detected on this trace yet — audit a larger day/week of traces.</p>'
